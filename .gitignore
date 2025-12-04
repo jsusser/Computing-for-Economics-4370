@@ -1,8 +1,9 @@
-# R and RStudio artifacts
+# R and RStudio artifacts, Oliver's Pycharm Too (hate R studio)
 .Rhistory
 .RData
 .Rproj.user/
 *.Rproj
+*.idea
 
 # LaTeX build artifacts
 *.aux
