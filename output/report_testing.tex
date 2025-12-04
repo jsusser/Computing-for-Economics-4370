@@ -1,0 +1,387 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage[margin=1in]{geometry}
+\usepackage{caption}
+\usepackage{verbatim}
+\usepackage{float}
+\usepackage{tabularray}
+\usepackage{amsmath}
+\usepackage{siunitx}
+\UseTblrLibrary{booktabs}
+\UseTblrLibrary{siunitx}
+
+\graphicspath{{.}{figures/}}
+
+\title{Smoking and Mortality Risk (NHANES 2013--2014)}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Data}
+This section details the source datasets, how they are obtained, and the basic shape and missingness patterns. DEMO and SMQ tables are joined on SEQN per NHANES cycle; mortality is linked via public-use files.
+
+\begin{center}
+\input{tables/raw_assets_overview.tex}
+\end{center}
+\medskip
+
+\begin{center}
+\input{tables/data_overview.tex}
+\end{center}
+\medskip
+
+\noindent\textit{Interpretation.}
+The raw asset overview shows two core NHANES files for the 2013--2014 cycle (DEMO\_H and SMQ\_H), each with 10{,}175 rows, and a public-use mortality linkage file with 7{,}168 rows. The fact that DEMO and SMQ share the same $n$ confirms that person-level joins on SEQN are well-defined for this wave. The mortality file covers a large majority of baseline respondents. The analytic working-sample summary indicates that, after merging and restricting to non-missing mortality labels, the final dataset contains 6{,}098 individuals and 8 modeled predictors with \emph{zero} remaining missing cells. This supports the idea that almost all attrition is driven by outcome availability rather than predictor missingness.
+
+\section{Cleaned Data}
+We construct $X$ and $y$ from the raw join. We pick a single label (dead preferred) and drop rows only if the label is missing. Features are imputed (numeric: median plus missing flags; categorical: Unknown level). Age and PIR are standardized and we add $\text{age\_sq}$ and $\log(\text{income})$. Categorical factors (smoker, sex) enter directly through dummies.
+
+\begin{center}
+\input{tables/clean_data_overview.tex}
+\end{center}
+\medskip
+
+\noindent\textit{Interpretation.}
+The cleaned-data overview shows that only 13 observations are dropped when enforcing a non-missing mortality label (from 6{,}111 to 6{,}098). All modeling features are then fully observed after imputation. Pre-imputation missingness is concentrated in income (PIR) and the outcome itself, which is consistent with survey non-response patterns on income and the fact that not all respondents are linkable to mortality follow-up.
+
+\noindent \textbf{Head of Feature Matrix (X)}
+\par
+\begin{center}
+\input{tables/head_features_X.tex}
+\end{center}
+\medskip
+
+\noindent \textbf{Head of Label Vector (y)}
+\par
+\begin{center}
+\input{tables/head_label_y.tex}
+\end{center}
+\medskip
+
+\noindent \textbf{Head of Cleaned Full Frame}
+\par
+\begin{center}
+\input{tables/head_cleaned_full_frame.tex}
+\end{center}
+\medskip
+
+\noindent \textbf{Head of Meta (IDs and Missing Flags)}
+\par
+\begin{center}
+\input{tables/head_meta_ids_missing.tex}
+\end{center}
+\medskip
+
+\noindent \textbf{Imputation Counts by Variable}
+\par
+\begin{center}
+\input{tables/imputation_counts_by_variable.tex}
+\end{center}
+\medskip
+
+\noindent\textit{Interpretation.}
+The heads of $X$, $y$, and the full cleaned frame verify that the pipeline produced the intended structure. The feature matrix $X$ includes standardized age, smoking status, the ordinal \texttt{smoker\_code}, squared age, and $\log(\text{income})$. The corresponding label vector $y$ is strictly binary (TRUE/FALSE for death). The full frame confirms that IDs (SEQN), wave indicators, and missingness flags are preserved for diagnostics. The imputation summary shows that age, sex, smoking status, and \texttt{smoker\_code} required \emph{no} imputation, while income was imputed 480 times. Thus, the only materially imputed predictor is PIR, and core demographic and smoking variables are fully observed.
+
+\section{Feature/Label Dictionaries and Metrics}
+We document each feature and the label, then summarize numeric distributions and categorical compositions to give context for the models.
+
+\noindent \textbf{Feature Dictionary (X)}
+\par
+\begin{center}
+\input{tables/feature_dictionary_X.tex}
+\end{center}
+\medskip
+
+\noindent \textbf{Label Dictionary (y)}
+\par
+\begin{center}
+\input{tables/label_dictionary_y.tex}
+\end{center}
+\medskip
+
+\noindent\textit{Interpretation.}
+The feature dictionary clarifies that age and income are standardized, smoking status enters both as a factor and as an ordinal code, and we include a nonlinear age term (\texttt{agesq}) and a log-transformed income proxy (\texttt{logincome}). Together, these design choices allow for flexible yet interpretable relationships between age, income, and mortality. The label dictionary makes explicit that the outcome is the linked mortality indicator (MORTSTAT==1), so all model predictions are interpretable as mortality risk over the follow-up horizon.
+
+\noindent \textbf{X Metrics (Numeric)}
+\par
+\begin{center}
+\input{tables/x_numeric_metrics.tex}
+\end{center}
+\medskip
+
+\noindent \textbf{X Metrics (Categorical)}
+\par
+\begin{center}
+\input{tables/x_categorical_metrics.tex}
+\end{center}
+\medskip
+
+\noindent \textbf{y Metrics}
+\par
+\begin{center}
+\input{tables/y_metrics_overview.tex}
+\end{center}
+\medskip
+
+\noindent\textit{Interpretation.}
+The numeric metrics for $X$ show that standardized age and $\texttt{agesq}$ both have mean near zero and unit variance, consistent with standardization. The log-income measure \texttt{logincome} has mean about 1.1 and moderate dispersion, reflecting the right-skewed nature of PIR before transformation. The ordinal \texttt{smoker\_code} spans 1--3 with mean 1.6, indicating that the sample is tilted toward never or former smokers rather than current smokers.
+
+The categorical metrics indicate that the sample is slightly majority female (about 52\% female, 48\% male) with no Unknown sex values. Smoking status is distributed as roughly 58\% never smokers, 22\% former smokers, and 20\% current smokers, with no observations in an Unknown category. This implies there is substantial representation in all three smoking groups, which is important for identifying differences in risk.
+
+The outcome distribution shows 466 deaths and 5{,}632 survivors out of 6{,}098 individuals, so the mortality prevalence is about 7--8\%. This is a moderately rare event, meaning naive accuracy is not very informative: a model that predicts everyone as alive would already achieve accuracy near 92\%. This motivates the focus on log-loss, Brier score, ROC AUC, and PR AUC in the model evaluation.
+
+\subsection*{Class Imbalance and Class Weights}
+Let $\pi = P(y=1)$ denote the prevalence of deaths. When $y$ is imbalanced ($\pi$ small), unweighted logistic loss can prioritize the majority class.
+A common remedy is to use inverse-prevalence weights: $w_1 = 1/\pi$ for positives and $w_0 = 1/(1-\pi)$ for negatives, often normalized so the average weight equals one.
+The weighted log-likelihood is
+\[
+L(\beta)
+= -\sum_i w_i\Big[y_i \log p_i + (1-y_i) \log(1-p_i)\Big],
+\quad p_i = \text{logit}^{-1}(X_i\beta).
+\]
+
+\noindent \textbf{Prevalence and Suggested Class Weights}
+\par
+\begin{center}
+\input{tables/class_weights_overview.tex}
+\end{center}
+\medskip
+
+\noindent\textit{Interpretation.}
+The class-imbalance summary confirms the positive class prevalence is about 8\% (466 of 6{,}098). The implied unconstrained weights $w_1 \approx 13.1$ for deaths and $w_0 \approx 1.08$ for survivors reflect the need to up-weight the rare events. After normalization, deaths receive a weight of about 6.5 and survivors about 0.54, which keeps the average weight near one while forcing the model to pay substantially more attention to correctly classifying deaths. These weights are used consistently in both the baseline logit and the regularized logit.
+
+\section{Transformations}
+This section explains the transformation logic and motivations. Label-only dropping preserves sample size. Standardized numerics help comparability across predictors. Categorical factors (smoker, sex) are used directly. Smoker categories follow CDC coding of SMQ020 and SMQ040.
+
+\begin{center}
+\input{tables/processing_notes.tex}
+\end{center}
+\medskip
+
+\noindent \textbf{Smoker Categories (Counts)}
+\par
+\begin{center}
+\input{tables/smoker_category_counts.tex}
+\end{center}
+\medskip
+
+\noindent\textit{Interpretation.}
+The processing notes formalize the derivation of smoking status from SMQ020 and SMQ040. Respondents who have never smoked 100 cigarettes are classified as Never; ever-smokers who do not currently smoke are classified as Former; and those who smoke every day or some days are classified as Current. The smoker-count table shows 3{,}523 Never smokers, 1{,}344 Former smokers, and 1{,}231 Current smokers. This distribution is balanced enough to estimate separate effects, and the explicit dropping of rows with missing smoking or label ensures that no ambiguous cases contaminate the modeling sample.
+
+\section{Models}
+We estimate two logistic models on the cleaned matrices:
+(1) a baseline weighted logit with HC1-robust standard errors and
+(2) a weighted regularized logit selected by cross-validation.
+
+\subsection*{Model 1: Logit (Weighted, HC1 robust)}
+\noindent Math:
+\[
+\Pr(y_i = 1 \mid X_i)
+= \text{logit}^{-1}\big(
+\beta_0
++ \beta_1 \cdot 1\{\text{smoker}_i=\text{Former}\}
++ \beta_2 \cdot 1\{\text{smoker}_i=\text{Never}\}
++ \beta_3 \,\text{age}_i
++ \beta_4 \,1\{\text{sex}_i=\text{male}\}
++ \beta_5 \,\text{log\_income}_i
+\big),
+\]
+where the omitted smoking category is \emph{Current}.
+
+\noindent Coefficients (robust SEs):
+\begin{center}
+\input{tables/ols_coefficients.tex}
+\end{center}
+\medskip
+
+\noindent\textit{Interpretation.}
+The weighted logit assigns large, precisely estimated coefficients to age and smoking status. Holding other covariates fixed, the log-odds of death increase by about 1.30 for a one-standard-deviation increase in age, and the positive coefficient on $\texttt{age\_sq}$ (about 0.45) implies that mortality risk accelerates at older ages rather than increasing linearly. In odds-ratio terms, a one-SD increase in age multiplies the odds of death by roughly $\exp(1.30) \approx 3.7$, highlighting the dominant role of age.
+
+Smoking coefficients are negative for Former (about $-0.54$) and Never (about $-1.14$), with Current smokers as the baseline. This means that, after age, sex, and income are accounted for, Former smokers have substantially lower odds of death than Current smokers (odds ratio $\approx \exp(-0.54) \approx 0.58$), and Never smokers have even lower odds (odds ratio $\approx \exp(-1.14) \approx 0.32$). The pattern is monotonic in the expected direction: Current $>$ Former $>$ Never in terms of risk.
+
+Higher log-income is strongly protective: the coefficient around $-0.92$ implies that a one-SD increase in the log-PIR measure cuts the odds of death to about 40\% of their prior level. The coefficient on male sex is positive but relatively small and not statistically significant at conventional 5\% levels, suggesting that, conditional on age, smoking, and income, residual sex differences in mortality are modest in this sample.
+
+\noindent \textbf{Classification metrics (in-sample, training set)}
+\par
+\begin{center}
+\input{tables/logit_metrics_in_sample.tex}
+\end{center}
+\medskip
+
+\noindent \textbf{Classification metrics (out-of-sample, validation set)}
+\par
+\begin{center}
+\input{tables/logit_metrics_out_of_sample.tex}
+\end{center}
+\medskip
+
+\noindent\textit{Interpretation.}
+The weighted logit achieves training accuracy of about 0.78 and validation accuracy of about 0.79, but because the outcome is rare, the more informative metrics are log-loss, Brier score, and AUCs. Both in-sample and out-of-sample log-loss are around 0.46 and Brier scores around 0.15, indicating that predicted probabilities are reasonably well calibrated but still leave room for improvement.
+
+The ROC AUC of 0.87--0.88 shows strong discrimination between deaths and survivors: if you take a random death and a random survivor, the model will assign a higher predicted risk to the death nearly 9 times out of 10. The precision--recall AUC of about 0.38--0.39 is well above the base prevalence (roughly 0.08), which means the model can meaningfully enrich for high-risk individuals relative to random targeting, even though the positive class is sparse.
+
+\subsection*{Model 2: Regularized Logit (CV, Weighted)}
+\noindent Math: we fit a penalized logit with an $L_1$ penalty,
+\[
+\hat{\beta}
+= \arg\min_{\beta}
+\Big[
+-\frac{1}{n}\sum_i w_i\big(y_i \log p_i + (1-y_i)\log(1-p_i)\big)
++ \lambda \lVert \beta \rVert_1
+\Big],
+\]
+with $\lambda$ chosen by cross-validation.
+
+\noindent Nonzero coefficients at the selected penalties:
+\begin{center}
+\input{tables/lasso_coefficients.tex}
+\end{center}
+\medskip
+
+\noindent\textit{Interpretation.}
+At $\lambda_{\min}$, the regularized logit retains broadly the same set of predictors as the baseline logit: indicators for Former and Never smokers, age, $\texttt{age\_sq}$, sex, and log-income. The magnitudes of the coefficients are very close to the unpenalized estimates (e.g., age around 1.29, Never around $-1.11$, log-income around $-0.91$), which indicates that the baseline logit is already relatively stable and not dominated by a few extreme observations.
+
+At the more conservative $\lambda_{1\text{se}}$, some coefficients are shrunk further toward zero: age and $\texttt{age\_sq}$ are slightly attenuated, log-income becomes less negative, and some smaller effects (e.g., sex) are reduced in magnitude. Nonetheless, all smoking and age-related coefficients retain the same signs, so the qualitative story---Current $>$ Former $>$ Never, strong age gradient, protective income effect---is unchanged.
+
+\noindent \textbf{Classification metrics (in-sample, training set)}
+\par
+\begin{center}
+\input{tables/regularized_logit_metrics_in_sample.tex}
+\end{center}
+\medskip
+
+\noindent \textbf{Classification metrics (out-of-sample, validation set)}
+\par
+\begin{center}
+\input{tables/regularized_logit_metrics_out_of_sample.tex}
+\end{center}
+\medskip
+
+\noindent\textit{Interpretation.}
+The regularized logit delivers in-sample and out-of-sample metrics that are nearly identical to the baseline logit: accuracy around 0.78--0.79, log-loss around 0.46, Brier score around 0.15, ROC AUC about 0.87--0.88, and PR AUC around 0.38--0.39. This indicates that the $L_1$ penalty is not used to squeeze out a large gain in predictive performance; instead, it mainly serves to enforce parsimony and confirm that only a small subset of predictors (age, smoking, income) are necessary to achieve strong discrimination.
+
+\section{Diagnostics}
+We start with multicollinearity (VIF), then show per-model diagnostic plots.
+
+\paragraph{Variance Inflation Factors (VIF).}
+\verbatiminput{artifacts/vif.txt}
+
+\noindent\textit{Interpretation.}
+The VIF table shows generalized VIF values very close to one for all predictors, with $\texttt{GVIF}^{1/(2\cdot Df)}$ in the range 1.02--1.06. This indicates that there is essentially no harmful multicollinearity among age, $\texttt{age\_sq}$, smoking dummies, sex, and log-income. As a result, the standard errors reported for the logit coefficients are not inflated by strong correlations among regressors, and inference on the main effects is stable.
+
+\subsection*{Model 1: Logit}
+We estimate a weighted logistic regression. Residual plots use deviance residuals. Predicted probabilities are also displayed as a 1–5 risk index.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{figures/ols_residuals_vs_fitted.png}
+\caption{Logit: Residuals vs Fitted (training sample, deviance residuals)}
+\end{figure}
+
+\noindent\textit{Interpretation.}
+The residuals-versus-fitted plot for the logit shows the familiar ``bow tie'' pattern associated with binary outcomes: residual variance is highest near fitted probabilities around 0.5 and shrinks toward zero as fitted risks approach 0 or 1. There is no strong evidence of systematic curvature or unmodeled structure in the mean: the residual cloud is roughly centered around zero across the fitted range. This supports the use of a logistic link with the chosen predictors, while reminding us that heteroskedasticity is inherent and motivates the use of robust standard errors.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{figures/ols_qq_plot.png}
+\caption{Logit: Normal Q--Q Plot of Deviance Residuals (training sample)}
+\end{figure}
+
+\noindent\textit{Interpretation.}
+The Q--Q plot for deviance residuals departs from the 45-degree line, especially in the tails, reflecting heavy-tailed behavior relative to a Gaussian reference. This is expected: even after the logit transform, residuals from a binary outcome are not normally distributed. Inference therefore relies on asymptotic theory and robust variance estimates, rather than on exact normality of residuals.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{figures/ols_predicted_by_smoker.png}
+\caption{Logit: Predicted Risk by Smoking Status (full analytic sample, scaled 1--5)}
+\end{figure}
+
+\noindent\textit{Interpretation.}
+The predicted-risk-by-smoking-status plot summarizes fitted mortality risk for Never, Former, and Current smokers. Consistent with the coefficient estimates, Current smokers have the highest mean predicted risk, Former smokers lie in the middle, and Never smokers have the lowest risk. The differences are sizable relative to the baseline prevalence (around 8\%) and align with clinical expectations. This provides a strong face-validity check that the model is capturing genuine smoking-related risk gradients rather than artifacts of the estimation procedure.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{figures/logit_roc.png}
+\caption{Logit: ROC Curve (out-of-sample, validation set)}
+\end{figure}
+
+\noindent\textit{Interpretation.}
+The out-of-sample ROC curve for the logit model lies well above the diagonal, reflecting strong separation between deaths and survivors. The ROC AUC of about 0.88 matches the classification metrics table and indicates that the model is highly effective at ranking individuals by risk, even after the sample is split into training and validation sets.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{figures/logit_pr.png}
+\caption{Logit: Precision--Recall Curve (out-of-sample, validation set)}
+\end{figure}
+
+\noindent\textit{Interpretation.}
+The precision--recall curve sits substantially above the horizontal line corresponding to the base death rate (approximately 0.08). This means that if we target individuals based on the model's risk score, the share of true deaths among the flagged high-risk group can be several times higher than under random targeting, at least over a reasonable range of recall values. In other words, the model provides substantial lift for identifying high-risk individuals in an imbalanced setting.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{figures/logit_calibration.png}
+\caption{Logit: Calibration by Risk Quintile (out-of-sample, validation set)}
+\end{figure}
+
+\noindent\textit{Interpretation.}
+The calibration-by-quintile plot compares average predicted probabilities to observed death rates within bins of the risk score on the validation set. Predicted and observed rates track each other closely across most quintiles, with only modest deviations in the highest-risk group. This, together with the Brier score around 0.15, suggests that the weighted logit is reasonably well calibrated: it tends to assign higher probabilities to groups with higher observed mortality, and the numeric levels are in the right ballpark.
+
+\subsection*{Model 2: Regularized Logit (CV)}
+We fit a logistic regression with an $L_1$ penalty and ten-fold cross-validation, using the same class weights as Model 1. Residual and Q--Q plots use predictions at $\lambda_{\min}$.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{figures/lasso_residuals_vs_fitted.png}
+\caption{Regularized Logit: Residuals vs Fitted (training sample, $\lambda_{\min}$)}
+\end{figure}
+
+\noindent\textit{Interpretation.}
+The residuals-versus-fitted plot for the regularized logit at $\lambda_{\min}$ looks very similar to the baseline logit: residual variance peaks around intermediate fitted probabilities and contracts near zero and one. There is no obvious additional structure, confirming that the $L_1$ penalty does not fundamentally change the mean functional form; it mainly shrinks coefficients without changing the overall shape of the fit.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{figures/lasso_qq_plot.png}
+\caption{Regularized Logit: Normal Q--Q Plot of Residuals (training sample, $\lambda_{\min}$)}
+\end{figure}
+
+\noindent\textit{Interpretation.}
+The Q--Q plot for the regularized logit again shows deviations from normality that mirror those of the baseline model, with heavier-than-normal tails. This reinforces the point that Lasso regularization addresses coefficient shrinkage and variable selection, not residual distributional assumptions; robust standard errors and large-sample arguments remain the basis for inference.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{figures/lasso_cv_plot.png}
+\caption{Regularized Logit: Cross Validation Error vs Lambda}
+\end{figure}
+
+\noindent\textit{Interpretation.}
+The cross-validation error curve is relatively flat near its minimum, indicating that a range of $\lambda$ values deliver very similar validation performance. The $\lambda_{\min}$ choice gives the smallest error, while the one-standard-error rule selects a slightly larger $\lambda$ that yields a sparser model with almost indistinguishable predictive performance. This stability suggests that the results are not finely tuned to a single penalty value and that the identification of age, smoking, and income as key predictors is robust.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{figures/regularized_logit_roc.png}
+\caption{Regularized Logit: ROC Curve (out-of-sample, validation set)}
+\end{figure}
+
+\noindent\textit{Interpretation.}
+The ROC curve for the regularized logit on the validation set nearly overlays the baseline logit's ROC curve, with area under the curve again around 0.88. This confirms that imposing an $L_1$ penalty does not degrade the model's ability to rank individuals by mortality risk.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{figures/regularized_logit_pr.png}
+\caption{Regularized Logit: Precision--Recall Curve (out-of-sample, validation set)}
+\end{figure}
+
+\noindent\textit{Interpretation.}
+The precision--recall curve for the regularized logit also shows precision well above the base rate for a sizeable range of recall. Its shape and area are nearly identical to the baseline logit's PR curve, reinforcing the view that regularization mainly streamlines the coefficient vector rather than improving discrimination per se.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{figures/regularized_logit_calibration.png}
+\caption{Regularized Logit: Calibration by Risk Quintile (out-of-sample, validation set)}
+\end{figure}
+
+\noindent\textit{Interpretation.}
+The calibration plot for the regularized logit shows predicted and observed death rates aligned across risk quintiles to a similar degree as in the baseline model. Small differences at the extreme quintiles are consistent with the slight shrinkage in coefficients but do not indicate meaningful miscalibration. In practice, either model would provide comparable risk stratification.
+
+\section{Coefficient Comparison}
+\noindent \textbf{Logit vs Regularized Logit (lambda.min and lambda.1se)}
+\par
+\begin{center}
+\input{tables/ols_lasso_coef_comparison.tex}
+\end{center}
+\medskip
+
+\noindent\textit{Interpretation.}
+The coefficient comparison table highlights the stability of key predictors across specifications. The baseline weighted logit and the Lasso solution at $\lambda_{\min}$ agree closely on the size and sign of the age, $\texttt{age\_sq}$, smoking, sex, and log-income effects. At $\lambda_{1\text{se}}$, some coefficients---particularly those on less predictive variables---are shrunk toward zero or dropped, but the main story remains: mortality risk rises steeply with age, is highest for Current smokers, intermediate for Former smokers, lowest for Never smokers, and decreases with higher income. This robustness across penalization levels suggests that the conclusions about smoking and mortality risk are not artifacts of overfitting or a particular tuning choice.
+
+\end{document}

@@ -1,4 +1,29 @@
-.Rproj.user
+# R and RStudio artifacts
 .Rhistory
 .RData
-.Ruserdata
+.Rproj.user/
+*.Rproj
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.blg
+
+# R graphics device output
+Rplots.pdf
+
+# Output: keep only .tex and .pdf; ignore everything else
+output/**
+!output/*.pdf
+!output/*.tex
+!output/**/*.tex
+
+# OS files
+.DS_Store
+Thumbs.db
