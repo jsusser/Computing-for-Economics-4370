@@ -1,0 +1,334 @@
+﻿\documentclass{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{tabularray}
+\usepackage{amsmath, amssymb}
+\usepackage{siunitx}
+\usepackage{verbatim}
+\usepackage{adjustbox}
+
+\UseTblrLibrary{booktabs}
+\UseTblrLibrary{siunitx}
+
+\graphicspath{{.}{figures/}}
+
+\title{Smoking and Mortality Risk (NHANES 2013--2014)}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Data}
+
+This section describes the data sources, how the files are linked, and the basic sample structure. DEMO and SMQ are joined on the NHANES respondent identifier \texttt{SEQN} within the 2013--2014 cycle. Mortality is then linked from the public use National Center for Health Statistics follow up file.
+
+\begin{table}[H]
+  \centering
+  \caption{Raw NHANES and Mortality Assets}
+  \label{tab:raw-assets}
+  \input{tables/raw_assets_overview.tex}
+\end{table}
+
+Table~\ref{tab:raw-assets} documents the raw input files, their row counts, and key variables. It shows that the DEMO and SMQ files have similar numbers of observations and that the mortality linkage covers nearly all respondents in the cycle. This confirms that merge keys and file coverage are consistent before any cleaning.
+
+\begin{table}[H]
+  \centering
+  \caption{Analytic Working Sample After Merges}
+  \label{tab:data-overview}
+  \input{tables/data_overview.tex}
+\end{table}
+
+Table~\ref{tab:data-overview} summarizes the analytic dataset after joining DEMO and SMQ on \texttt{SEQN} and merging to the mortality file. It shows the final number of unique individuals and the frequency of nonmissing mortality labels. This table makes explicit that the sample is restricted only by data availability on the outcome, not by predictor missingness.
+
+\section{Cleaned Data}
+
+We construct a feature matrix \(X\) and a binary outcome \(y\) from the merged dataset with the following design:
+
+\begin{itemize}
+  \item The label \(y_i\) is an indicator for mortality by the follow up time. Rows are dropped only if this label is missing.
+  \item Core predictors in \(X\) include age, sex, income to poverty ratio (PIR), smoking status, and basic demographic controls.
+  \item Numeric variables are imputed using the median and accompanied by missingness flags. Categorical variables are imputed to an explicit \texttt{Unknown} level.
+  \item Age and PIR are standardized; we add squared age and a log income transformation for flexibility.
+  \item Smoking and sex remain categorical factors that enter the models through dummy variables.
+\end{itemize}
+
+\begin{table}[H]
+  \centering
+  \caption{Clean Data Overview and Feature Construction}
+  \label{tab:clean-overview}
+  \input{tables/clean_data_overview.tex}
+\end{table}
+
+Table~\ref{tab:clean-overview} lists the main variables in the clean matrix and the choices for coding and imputation. The design preserves the full sample of labeled observations while making the underlying numeric variables comparable in scale and explicitly tracking missingness.
+
+\subsection*{Illustrative Heads of the Clean Matrices}
+
+The next tables show the top rows of the key objects. They are mainly diagnostic and help verify that the pipeline produced the intended structure.
+
+\begin{table}[H]
+  \centering
+  \caption{Head of Feature Matrix \(X\)}
+  \label{tab:head-X}
+  \begin{adjustbox}{max width=\textwidth}
+    \input{tables/head_features_X.tex}
+  \end{adjustbox}
+\end{table}
+
+Table~\ref{tab:head-X} confirms that the feature matrix has the expected standardized numeric columns, dummy variables, and missingness flags. Each row corresponds to an individual respondent.
+
+\begin{table}[H]
+  \centering
+  \caption{Head of Label Vector \(y\)}
+  \label{tab:head-y}
+  \input{tables/head_label_y.tex}
+\end{table}
+
+Table~\ref{tab:head-y} shows the corresponding outcome vector, which is binary with values equal to zero or one. This confirms that the label extraction is consistent with the mortality indicator.
+
+\begin{table}[H]
+  \centering
+  \caption{Head of Cleaned Full Data Frame}
+  \label{tab:head-full}
+  \begin{adjustbox}{max width=\textwidth}
+    \input{tables/head_cleaned_full_frame.tex}
+  \end{adjustbox}
+\end{table}
+
+Table~\ref{tab:head-full} presents the head of the full cleaned frame that includes all predictors, the label, and any auxiliary variables. It is useful for checking that variable names, units, and coding of categorical levels align with the intended design.
+
+\begin{table}[H]
+  \centering
+  \caption{Head of Meta Data (IDs and Missingness Flags)}
+  \label{tab:head-meta}
+  \begin{adjustbox}{max width=\textwidth}
+    \input{tables/head_meta_ids_missing.tex}
+  \end{adjustbox}
+\end{table}
+
+Table~\ref{tab:head-meta} focuses on identifier columns and missingness indicators. It confirms that the data are de duplicated on \texttt{SEQN} and that missingness flags behave as expected.
+
+\begin{table}[H]
+  \centering
+  \caption{Imputation Counts by Variable}
+  \label{tab:impute-counts}
+  \input{tables/imputation_counts_by_variable.tex}
+\end{table}
+
+Table~\ref{tab:impute-counts} reports the number of imputed values by variable. It shows that core predictors like age and smoking status have little or no imputation, while income (PIR) may require more. This pattern justifies a simple median+flag strategy and alerts the reader that inference on heavily imputed variables should be interpreted with care.
+
+\section{Feature and Label Dictionaries and Metrics}
+
+We next document the variables in \(X\) and \(y\) and summarize their distributions. This provides context for the modeling results.
+
+\begin{table}[H]
+  \centering
+  \caption{Feature Dictionary for \(X\)}
+  \label{tab:feature-dict}
+  \input{tables/feature_dictionary_X.tex}
+\end{table}
+
+Table~\ref{tab:feature-dict} defines each feature, its source, its transformation, and units. This makes clear, for example, which variables are standardized, which are indicators, and which are derived from original NHANES items.
+
+\begin{table}[H]
+  \centering
+  \caption{Label Dictionary for \(y\)}
+  \label{tab:label-dict}
+  \input{tables/label_dictionary_y.tex}
+\end{table}
+
+Table~\ref{tab:label-dict} spells out the coding of the mortality outcome and any auxiliary risk index that mirrors the binary label. The outcome is a true binary indicator, which is important when interpreting later residual diagnostics.
+
+\begin{table}[H]
+  \centering
+  \caption{Numeric Metrics for Features in \(X\)}
+  \label{tab:x-metrics-numeric}
+  \begin{adjustbox}{max width=\textwidth}
+    \input{tables/x_numeric_metrics.tex}
+  \end{adjustbox}
+\end{table}
+
+Table~\ref{tab:x-metrics-numeric} summarizes means, standard deviations, and ranges for numeric predictors. Standardization implies that many transformed variables have mean close to zero and variance close to one. This scaling helps the LASSO penalty treat coefficients on a comparable footing and stabilizes neural network training.
+
+\begin{table}[H]
+  \centering
+  \caption{Categorical Metrics for Features in \(X\)}
+  \label{tab:x-metrics-categorical}
+  \input{tables/x_categorical_metrics.tex}
+\end{table}
+
+Table~\ref{tab:x-metrics-categorical} reports category frequencies and shares for categorical variables such as smoking status and sex. These proportions indicate that the sample is reasonably balanced across key groups and that each smoking category has enough observations to estimate separate effects.
+
+\begin{table}[H]
+  \centering
+  \caption{Outcome Distribution for \(y\)}
+  \label{tab:y-metrics}
+  \input{tables/y_metrics_overview.tex}
+\end{table}
+
+Table~\\ref{tab:y-metrics} shows the number and share of deaths versus survivors. The mortality indicator is relatively rare, so the outcome distribution is imbalanced. We therefore use inverse-prevalence class weights in our logistic models and report classification metrics (accuracy, log loss, Brier score, ROC AUC).
+
+\begin{table}[H]
+  \centering
+  \caption{Class Imbalance and Suggested Weights}
+  \label{tab:class-weights}
+  \input{tables/class_weights_overview.tex}
+\end{table}
+
+\section{Transformations and Smoking Codes}
+
+The transformations in the data pipeline are motivated by both statistical considerations and alignment with standard epidemiologic coding of NHANES smoking variables.
+
+Key NHANES smoking items include:
+
+\begin{itemize}
+  \item \textbf{SMQ020}: indicator for whether the respondent has smoked at least 100 cigarettes in their life. This defines ever versus never smokers.
+  \item \textbf{SMQ040}: indicator for whether the respondent currently smokes cigarettes. This splits ever smokers into current and former smokers.
+  \item Related items such as SMQ050Q or SMQ060 capture intensity or age at smoking, but these are not central in the current specification.
+\end{itemize}
+
+Using these variables, we define a three level smoking factor: Never, Former, and Current. Never smokers have SMQ020 equal to zero. Former smokers have SMQ020 equal to one and SMQ040 equal to zero. Current smokers have SMQ020 equal to one and SMQ040 equal to one.
+
+Age and PIR are transformed for both modeling stability and interpretability. Age is standardized and used both linearly and through a squared term. PIR is standardized and a log transformation is used when appropriate to compress the upper tail.
+
+\begin{table}[H]
+  \centering
+  \caption{Processing Notes and Transformation Summary}
+  \label{tab:processing-notes}
+  \input{tables/processing_notes.tex}
+\end{table}
+
+Table~\ref{tab:processing-notes} summarizes these choices in a compact format. It emphasizes that label only dropping preserves the analytic sample size and that we do not impute the outcome.
+
+\begin{table}[H]
+  \centering
+  \caption{Smoking Categories: Counts and Shares}
+  \label{tab:smoker-counts}
+  \input{tables/smoker_category_counts.tex}
+\end{table}
+
+Table~\ref{tab:smoker-counts} reports the final counts and shares of Never, Former, and Current smokers in the clean sample. The distribution shows substantial representation in each category, so the estimated differences in mortality risk across smoking groups are based on nontrivial sample sizes rather than a few outliers.
+
+\section{Models}
+
+We estimate two logistic models on the cleaned data: a weighted logit with HC1 robust standard errors, and a weighted regularized logit (LASSO) with cross validation.
+
+\subsection{Model 1: Logit (Weighted, HC1 robust)}
+
+We model the probability of death via the log-odds:
+\begin{equation}
+  \log\frac{p_i}{1-p_i}
+  = \beta_0
+  + \beta_1 \mathbf{1}\{\text{smoker}_i = \text{Former}\}
+  + \beta_2 \mathbf{1}\{\text{smoker}_i = \text{Current}\}
+  + \beta_3 \,\text{age}_i
+  + \beta_4 \mathbf{1}\{\text{sex}_i = \text{male}\}
+  + \beta_5 \,\log(1+\text{PIR}_i).
+\end{equation}
+Weights are inverse-prevalence and normalized to have mean one.
+
+\begin{table}[H]
+  \centering
+  \caption{Logit Coefficients (HC1 robust)}
+  \label{tab:logit-coefs}
+  \input{tables/ols_coefficients.tex}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \caption{Logit Classification Metrics (Training Split)}
+  \label{tab:logit-metrics-in}
+  \input{tables/logit_metrics_in_sample.tex}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \caption{Logit Classification Metrics (Validation Split)}
+  \label{tab:logit-metrics-out}
+  \input{tables/logit_metrics_out_of_sample.tex}
+\end{table}
+
+\subsection{Model 2: Regularized Logit (LASSO, CV)}
+
+The LASSO model penalizes the absolute size of coefficients to encourage sparsity. In vector notation,
+\begin{equation}
+  \hat{\beta}(\lambda)
+  = \arg\min_{\beta}
+  \left\{
+    \frac{1}{2n} \lVert y - X\beta \rVert_2^2
+    + \lambda \lVert \beta \rVert_1
+  \right\},
+\end{equation}
+where \(\lambda \ge 0\) controls the strength of the penalty. We choose \(\lambda\) by cross validation, using both the minimum error choice and the one standard error rule.
+
+\begin{table}[H]
+  \centering
+  \caption{LASSO Coefficients at Cross Validated \(\lambda\)}
+  \label{tab:lasso-coefs}
+  \input{tables/lasso_coefficients.tex}
+\end{table}
+
+Table~\ref{tab:lasso-coefs} lists the nonzero coefficients at the selected penalty. The variables that survive penalization mirror the OLS specification: age and PIR remain central, along with sex and smoking indicators. Many weaker covariates are set exactly to zero, which simplifies the model without materially changing its main substantive conclusions.
+
+\begin{table}[H]
+  \centering
+\caption{Regularized Logit Classification Metrics (Training Split)}
+  \label{tab:lasso-metrics-in}
+  \input{tables/regularized_logit_metrics_in_sample.tex}
+\end{table}
+
+\begin{table}[H]
+  \centering
+\caption{Regularized Logit Classification Metrics (Validation Split)}
+  \label{tab:lasso-metrics-out}
+  \input{tables/regularized_logit_metrics_out_of_sample.tex}
+\end{table}
+
+Tables~\ref{tab:lasso-metrics-in} and~\ref{tab:lasso-metrics-out} show that the LASSO achieves training and validation performance very close to the OLS model. The gains in out of sample error are small. The main value of the LASSO here is interpretive: it confirms that only a small subset of the available predictors is truly useful for prediction and that age and smoking status dominate.
+
+% (Neural network section removed)
+% (Model 3 diagnostics removed)
+\section{Coefficient Comparison: OLS versus LASSO}
+
+\begin{table}[H]
+  \centering
+  \caption{Coefficient Comparison: OLS and LASSO at \(\lambda_{\min}\) and \(\lambda_{\text{1se}}\)}
+  \label{tab:ols-lasso-coef-compare}
+  \begin{adjustbox}{max width=\textwidth}
+    \input{tables/ols_lasso_coef_comparison.tex}
+  \end{adjustbox}
+\end{table}
+
+Table~\ref{tab:ols-lasso-coef-compare} compares OLS coefficients with LASSO solutions at two penalty levels. The LASSO estimates for age, smoking dummies, sex, and PIR closely track the OLS values at \(\lambda_{\min}\), which indicates that the OLS coefficients are not driven by a few high leverage observations. At the more conservative \(\lambda_{\text{1se}}\), many smaller coefficients are shrunk to zero, but the sign and ordering of the surviving effects remain consistent. This reinforces the conclusion that age and smoking status are the most stable and important predictors in this modeling framework.
+
+\section{Monte Carlo Evidence for LASSO Stability}
+
+Finally, we use bootstrap resampling of the cleaned dataset to examine how often LASSO selects each predictor and how large the typical active set is.
+
+\begin{table}[H]
+  \centering
+  \caption{Bootstrap LASSO Selection Frequencies}
+  \label{tab:lasso-mc-select}
+  \begin{adjustbox}{max width=\textwidth}
+    % \input{tables/lasso_mc_selection_frequencies.tex}
+  \end{adjustbox}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \caption{Bootstrap Distribution of LASSO Nonzero Coefficients}
+  \label{tab:lasso-mc-nonzero}
+  % \input{tables/lasso_mc_nonzero_counts.tex}
+\end{table}
+
+Table~\ref{tab:lasso-mc-select} shows how often each variable is selected with a nonzero coefficient across bootstrap samples. Core predictors such as age and the smoking indicators are chosen in a large fraction of resamples, while many auxiliary variables are selected rarely. This pattern indicates that the importance of age and smoking for mortality risk is robust to sampling variability.
+
+Table~\ref{tab:lasso-mc-nonzero} reports the distribution of the number of active coefficients in each bootstrap draw. The distribution is relatively tight, which means that the effective model size under the chosen penalty does not fluctuate wildly across resamples. The combination of stable selection frequencies for key variables and a narrow distribution of active set sizes suggests that the LASSO model is well calibrated and that its conclusions about which predictors matter are not an artifact of a particular random split.
+
+\end{document}
+
+

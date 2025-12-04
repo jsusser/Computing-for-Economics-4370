@@ -1,0 +1,392 @@
+::: {.callout-smu-blue}
+- This homework is a *coding* assignment. Please follow the instructions to complete the tasks.
+- Use Quarto/Knitr chunks for all work.
+- Turn in the rendered HTML **and** your `.qmd` source via Canvas.
+:::
+
+## 0. Setup
+
+```{r, message=FALSE}
+set.seed(123)  # Please don't change this seed.
+
+# You may load packages you plan to use (optional):
+library(tidyverse)
+```
+
+
+
+## 1. OLS Estimation
+
+Recall that we implemented the OLS estimator in the lecture ([link](https://zhan-gao.github.io/ECOx370/lectures/02-R-adv.html#example-ols-estimation)). 
+
+Please write a function `ols_est(X, y)` that implements the OLS estimator and returns both the estimate dcoefficients and the t-values.
+
+```{r ols_est}
+# TODO: finish the function ols_est(X, y).
+
+ols_est <- function(X, y, b0 = rep(0, ncol(X))) {
+  # Get dimensions
+  n <- nrow(X)
+  k <- ncol(X)
+  
+  # OLS estimator
+  bhat <- solve(t(X) %*% X, t(X) %*% y)
+
+  # variance of residuals & vcov
+  ehat   <- y - X %*% bhat
+  sigma2 <- as.numeric(crossprod(ehat) / (n - k))
+  vcov   <- sigma2 * solve(t(X) %*% X)
+  se     <- sqrt(diag(vcov))
+
+  # t-values
+  t_values <- (bhat - b0) / se
+
+  return(list(bhat = bhat, se = se, t_values = t_values))
+}
+```
+
+Please generate a simple test dataset to check if your function is working properly by comparing with the result from `lm()`. 
+
+::: {.callout-tip}
+Use `?lm` to see how to use `lm()` to run the linear regression.
+:::
+
+```{r q1-test}
+# TODO: Test if ols_est() is working properly
+
+# Generate a simple test dataset
+n_test <- 100
+X_test <- cbind(1, rnorm(n_test), rnorm(n_test))  # intercept + 2 regressors
+beta_true <- c(1, 2, 3)  # true coefficients
+y_test <- X_test %*% beta_true + rnorm(n_test)
+
+# Compare the result from ols_est() and lm()
+# Using our function
+result_ols <- ols_est(X_test, y_test)
+
+# Using lm()
+lm_result <- lm(y_test ~ X_test[, 2] + X_test[, 3])
+
+# Compare coefficients
+cat("Our OLS function coefficients:\n")
+print(result_ols$bhat)
+cat("\nlm() coefficients:\n")
+print(coef(lm_result))
+
+# Compare standard errors
+cat("\nOur OLS function standard errors:\n")
+print(result_ols$se)
+cat("\nlm() standard errors:\n")
+print(summary(lm_result)$coefficients[, 2])
+
+# Compare t-values
+cat("\nOur OLS function t-values:\n")
+print(result_ols$t_values)
+cat("\nlm() t-values:\n")
+print(summary(lm_result)$coefficients[, 3])
+```
+
+
+## 2. Monte Carlo Simulation
+
+Let's apply the skills learned in the class to implement a Monte Carlo simulation. 
+
+In such experiments, we sample data from a specified statistical model and examine the finite sample performance of estimation/inference procedures.
+
+For different data generating processes, different primitive parameter values, and different sample sizes $n$, we simulate data and estimate the model for many times and summarized the results (in most cases) by measures like (empirical) Bias, RMSE, size and empirical power functions, or empirical density plots, to examine the finite sample behavior of the estimation/inference procedures.
+
+In this exercise, we will focus on the finite sample estimation accuracy of the OLS estimator in linear regression models. The accuracy can be measured by bias and root mean square error (RMSE).
+
+Generically, bias and root mean square error (RMSE) are calculated by $$bias = R^{-1}\sum_{r=1}^R \left( \hat{ \theta}^{(r)} - \theta_0 \right),$$ $$RMSE = \left(R^{-1}\sum_{r= 1}^R \left( \hat{\theta}^{(r)} -\theta_0 \right)^2\right)^{1/2},$$ for true parameter $\theta_0$ and its estimate $\hat{\theta}^{(r)}$, and $R$ is the number of replications.
+
+### Model
+
+Consider a linear regression model 
+$$y_i = \alpha + x_{i1}\beta_1 + x_{i2}\beta_2 + u_i$$
+for $i = 1, 2, \ldots, n$, where $n = 100$.
+$(y_i, x_i)$ are independently and identically distributed (i.i.d.) with $$u_i\sim i.i.d.N(0,1), \quad (x_{i1}, x_{i2})^\prime \sim i.i.d. N\left(\begin{pmatrix}0 \\ 1 \end{pmatrix}, \begin{pmatrix} \sigma_1^2 & \rho\sigma_1\sigma_2 \\  \rho\sigma_1\sigma_2 & \sigma_2^2 \end{pmatrix} \right).$$ True parameters are $a = 0.11$, $\beta = (0.22, 0.33)^\prime$, $\rho = 0.5$, $\sigma_1 = 1$, and $\sigma_2 = 4$.
+
+### Step 1: Data generating function
+
+Pleaes write a function `dgp(...)` that takes the sample size $n$ and model parameters as inputs and returns the simulated data $(y_i, x_{i1}, x_{i2})$ for $i = 1, 2, \ldots, n$.
+
+```{r q2-dgp}
+# TODO: simulate data
+dgp <- function(n, alpha = 0.11, beta1 = 0.22, beta2 = 0.33, 
+                rho = 0.5, sigma1 = 1, sigma2 = 4) {
+  # Generate correlated regressors (x1, x2)
+  # Mean vector
+  mu_x <- c(0, 1)
+  
+  # Covariance matrix
+  Sigma_x <- matrix(c(sigma1^2, rho*sigma1*sigma2,
+                      rho*sigma1*sigma2, sigma2^2), 
+                    nrow = 2, ncol = 2)
+  
+  # Generate (x1, x2) from bivariate normal
+  X_reg <- MASS::mvrnorm(n, mu = mu_x, Sigma = Sigma_x)
+  x1 <- X_reg[, 1]
+  x2 <- X_reg[, 2]
+  
+  # Generate error term
+  u <- rnorm(n, mean = 0, sd = 1)
+  
+  # Generate dependent variable
+  y <- alpha + beta1 * x1 + beta2 * x2 + u
+  
+  # Return data as data frame
+  return(data.frame(y = y, x1 = x1, x2 = x2))
+}
+```
+
+
+### Step 2: Setup Primitive Parameters
+
+
+```{r q2-setup}
+# TODO: setup primitive parameters: sample size, true parameters, etc.
+
+# Simulation parameters
+n <- 100  # sample size
+R <- 1000  # number of replications
+
+# True parameters
+alpha_true <- 0.11
+beta1_true <- 0.22
+beta2_true <- 0.33
+rho_true <- 0.5
+sigma1_true <- 1
+sigma2_true <- 4
+
+# True parameter vector
+theta_true <- c(alpha_true, beta1_true, beta2_true)
+```
+
+
+### Step 3: Run Simulation
+
+
+```{r q2-run}
+# TODO: Run the simulation (generate data - estimation - save results) for 1000 replications
+
+# Initialize storage for results
+results <- matrix(NA, nrow = R, ncol = 3)  # 3 coefficients: alpha, beta1, beta2
+colnames(results) <- c("alpha", "beta1", "beta2")
+
+# Run simulation
+for (r in 1:R) {
+  # Generate data
+  data <- dgp(n = n, alpha = alpha_true, beta1 = beta1_true, beta2 = beta2_true,
+              rho = rho_true, sigma1 = sigma1_true, sigma2 = sigma2_true)
+  
+  # Create design matrix (intercept + x1 + x2)
+  X <- cbind(1, data$x1, data$x2)
+  
+  # Estimate using our OLS function
+  ols_result <- ols_est(X, data$y)
+  
+  # Store results
+  results[r, ] <- ols_result$bhat
+}
+
+# Display first few results
+head(results)
+```
+
+### Step 4: Summarize Results
+
+```{r q2-summarize}
+# TODO: Write a function to calculate bias and RMSE
+sum_results <- function(estimates, true_params, param_names = NULL) {
+  # Calculate bias
+  bias <- colMeans(estimates) - true_params
+  
+  # Calculate RMSE
+  rmse <- sqrt(colMeans((estimates - matrix(true_params, nrow = nrow(estimates), 
+                                           ncol = ncol(estimates), byrow = TRUE))^2))
+  
+  # Set parameter names if not provided
+  if (is.null(param_names)) {
+    if (length(true_params) == 3) {
+      param_names <- c("alpha", "beta1", "beta2")
+    } else if (length(true_params) == 2) {
+      param_names <- c("alpha", "beta1")
+    } else {
+      param_names <- paste0("param", 1:length(true_params))
+    }
+  }
+  
+  # Create summary table
+  summary_table <- data.frame(
+    Parameter = param_names,
+    True_Value = true_params,
+    Mean_Estimate = colMeans(estimates),
+    Bias = bias,
+    RMSE = rmse
+  )
+  
+  return(summary_table)
+}
+
+# TODO: Summarize and report the bias and RMSE
+summary_results <- sum_results(results, theta_true)
+print(summary_results)
+
+# TODO: plot the empirical density of the estimated coefficient beta_1 across replications
+library(ggplot2)
+
+# Plot empirical density of beta1
+ggplot(data.frame(beta1 = results[, "beta1"]), aes(x = beta1)) +
+  geom_density(fill = "blue", alpha = 0.3) +
+  geom_vline(xintercept = beta1_true, color = "red", linetype = "dashed", size = 1) +
+  labs(title = "Empirical Density of Estimated Beta1",
+       x = "Beta1 Estimates",
+       y = "Density") +
+  theme_minimal()
+```
+
+### Step 5: Interpret your results
+
+Please interpret your results and discuss the findings.
+
+### Step 6: Run simulation with different sample sizes
+
+Let's investigate how the estimation accuracy of the OLS estimator changes as the sample size increases.
+
+```{r q2-run-different-n}
+# TODO: Run the simulation with different sample sizes
+sample_sizes <- c(100, 200, 500, 1000)
+
+# Initialize storage for results across different sample sizes
+results_different_n <- list()
+
+# Run simulation for each sample size
+for (n_size in sample_sizes) {
+  cat("Running simulation for n =", n_size, "\n")
+  
+  # Initialize storage for this sample size
+  results_n <- matrix(NA, nrow = R, ncol = 3)
+  colnames(results_n) <- c("alpha", "beta1", "beta2")
+  
+  # Run simulation
+  for (r in 1:R) {
+    # Generate data
+    data <- dgp(n = n_size, alpha = alpha_true, beta1 = beta1_true, beta2 = beta2_true,
+                rho = rho_true, sigma1 = sigma1_true, sigma2 = sigma2_true)
+    
+    # Create design matrix
+    X <- cbind(1, data$x1, data$x2)
+    
+    # Estimate using our OLS function
+    ols_result <- ols_est(X, data$y)
+    
+    # Store results
+    results_n[r, ] <- ols_result$bhat
+  }
+  
+  # Store results for this sample size
+  results_different_n[[paste0("n_", n_size)]] <- results_n
+}
+
+# Calculate summary statistics for each sample size
+summary_different_n <- data.frame()
+
+for (n_size in sample_sizes) {
+  results_n <- results_different_n[[paste0("n_", n_size)]]
+  summary_n <- sum_results(results_n, theta_true)
+  summary_n$Sample_Size <- n_size
+  summary_different_n <- rbind(summary_different_n, summary_n)
+}
+
+# Display results
+print(summary_different_n)
+
+# Plot RMSE vs sample size for beta1
+rmse_beta1 <- summary_different_n[summary_different_n$Parameter == "beta1", c("Sample_Size", "RMSE")]
+ggplot(rmse_beta1, aes(x = Sample_Size, y = RMSE)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "RMSE of Beta1 vs Sample Size",
+       x = "Sample Size",
+       y = "RMSE") +
+  theme_minimal()
+```
+
+What do you observe? Why?
+
+### Step 7: Run simulation with misspecified model
+
+Now, we re-do the simulation with the same data generating process.
+
+However, when we run the regression, we only include the first regressor $x_{i1}$ and the intercept while omitting the second regressor $x_{i2}$.
+
+
+```{r q2-run-misspecified-model}
+# TODO: Run the simulation with misspecified model
+# Initialize storage for misspecified model results
+results_misspecified <- matrix(NA, nrow = R, ncol = 2)  # Only intercept and beta1
+colnames(results_misspecified) <- c("alpha", "beta1")
+
+# Run simulation with misspecified model (omit x2)
+for (r in 1:R) {
+  # Generate data (same as before)
+  data <- dgp(n = n, alpha = alpha_true, beta1 = beta1_true, beta2 = beta2_true,
+              rho = rho_true, sigma1 = sigma1_true, sigma2 = sigma2_true)
+  
+  # Create design matrix with only intercept and x1 (omit x2)
+  X_misspecified <- cbind(1, data$x1)
+  
+  # Estimate using our OLS function
+  ols_result_misspecified <- ols_est(X_misspecified, data$y)
+  
+  # Store results (only alpha and beta1)
+  results_misspecified[r, ] <- ols_result_misspecified$bhat
+}
+
+# Display first few results
+head(results_misspecified)
+```
+
+```{r q2-run-misspecified-model-result}
+# TODO: Check the bias and RMSE for beta_1 with the misspecified model
+# True parameters for misspecified model (what we're actually estimating)
+theta_misspecified_true <- c(alpha_true, beta1_true)
+
+# Calculate summary for misspecified model
+summary_misspecified <- sum_results(results_misspecified, theta_misspecified_true, 
+                                   param_names = c("alpha", "beta1"))
+print("Misspecified Model Results:")
+print(summary_misspecified)
+
+# Compare with correctly specified model for beta1
+summary_correct <- sum_results(results, theta_true)
+beta1_correct <- summary_correct[summary_correct$Parameter == "beta1", ]
+beta1_misspecified <- summary_misspecified[summary_misspecified$Parameter == "beta1", ]
+
+cat("\nComparison for Beta1:\n")
+cat("Correctly specified model:\n")
+cat("  Bias:", beta1_correct$Bias, "\n")
+cat("  RMSE:", beta1_correct$RMSE, "\n")
+cat("Misspecified model:\n")
+cat("  Bias:", beta1_misspecified$Bias, "\n")
+cat("  RMSE:", beta1_misspecified$RMSE, "\n")
+
+# Plot comparison of beta1 estimates
+library(ggplot2)
+comparison_data <- data.frame(
+  Model = rep(c("Correct", "Misspecified"), each = R),
+  Beta1 = c(results[, "beta1"], results_misspecified[, "beta1"])
+)
+
+ggplot(comparison_data, aes(x = Beta1, fill = Model)) +
+  geom_density(alpha = 0.5) +
+  geom_vline(xintercept = beta1_true, color = "red", linetype = "dashed", size = 1) +
+  labs(title = "Comparison of Beta1 Estimates: Correct vs Misspecified Model",
+       x = "Beta1 Estimates",
+       y = "Density") +
+  theme_minimal()
+```
+
+What do you observe? Why?
+
+The estimates of the misspecified model are biased and have a larger RMSE than the correctly specified model, which demonstrates the **omitted variable bias**.

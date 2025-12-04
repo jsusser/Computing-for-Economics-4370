@@ -1,0 +1,161 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage[margin=1in]{geometry}
+\usepackage{caption}
+\usepackage{verbatim}
+\usepackage{float}
+\usepackage{tabularray}
+\usepackage{amsmath}
+\usepackage{siunitx}
+\UseTblrLibrary{booktabs}
+\UseTblrLibrary{siunitx}
+\graphicspath{{.}{figures/}}
+\title{Smoking and Mortality Risk (NHANES 2013--2014)}
+\date{\today}
+\begin{document}
+\maketitle
+\section{Data}
+This section details the source datasets, how they are obtained, and the basic shape and missingness patterns. DEMO and SMQ tables are joined on SEQN per NHANES cycle; mortality is linked via public-use files.
+\input{tables/raw_assets_overview.tex}
+\medskip
+\input{tables/data_overview.tex}
+\medskip
+\section{Cleaned Data}
+We construct X and y from the raw join: pick a single label (dead preferred) and drop rows only if the label is missing. Features are imputed (numeric: median + missing flags; categorical: Unknown level); age and PIR are standardized; we add age\_sq and log\_income. Categorical factors (smoker, sex) are used directly.
+\input{tables/clean_data_overview.tex}
+\noindent \textbf{Head of Feature Matrix (X)}
+\par
+\input{tables/head_features_X.tex}
+\medskip
+\noindent \textbf{Head of Label Vector (y)}
+\par
+\input{tables/head_label_y.tex}
+\medskip
+\noindent \textbf{Head of Cleaned Full Frame}
+\par
+\input{tables/head_cleaned_full_frame.tex}
+\medskip
+\noindent \textbf{Head of Meta (IDs and Missing Flags)}
+\par
+\input{tables/head_meta_ids_missing.tex}
+\medskip
+\noindent \textbf{Imputation Counts by Variable}
+\par
+\input{tables/imputation_counts_by_variable.tex}
+\medskip
+\section{Feature/Label Dictionaries and Metrics}
+We document each feature and the label, then summarize numeric distributions and categorical compositions to contextualize model inputs.
+\noindent \textbf{Feature Dictionary (X)}
+\par
+\input{tables/feature_dictionary_X.tex}
+\medskip
+\noindent \textbf{Label Dictionary (y)}
+\par
+\input{tables/label_dictionary_y.tex}
+\medskip
+\noindent \textbf{X Metrics (Numeric)}
+\par
+\input{tables/x_numeric_metrics.tex}
+\medskip
+\noindent \textbf{X Metrics (Categorical)}
+\par
+\input{tables/x_categorical_metrics.tex}
+\medskip
+\noindent \textbf{y Metrics}
+\par
+\input{tables/y_metrics_overview.tex}
+\medskip
+\subsection*{Class Imbalance and Class Weights}
+Let $\pi = P(y=1)$ denote the prevalence of deaths. When $y$ is imbalanced ($\pi$ small), unweighted logistic loss can prioritize the majority class.
+ A common remedy is to use inverse-prevalence weights: $w_1 = 1/\pi$ for positives and $w_0 = 1/(1-\pi)$ for negatives, often normalized so the average weight equals one.
+ Weighted log-likelihood becomes $L(\beta) = -\sum_i w_i\,[y_i \log p_i + (1-y_i) \log(1-p_i)]$, with $p_i = \text{logit}^{-1}(X_i\beta)$.
+\noindent \textbf{Prevalence and Suggested Class Weights}
+\par
+\input{tables/class_weights_overview.tex}
+\medskip
+\section{Transformations}
+This section explains the transformation logic and motivations: label-only dropping preserves sample size; standardized numerics help comparability; categorical factors (smoker, sex) are used directly; smoker categories follow CDC coding of SMQ020/040.
+\input{tables/processing_notes.tex}
+\noindent \textbf{Smoker Categories (Counts)}
+\par
+\input{tables/smoker_category_counts.tex}
+\medskip
+\section{Models}
+We estimate two logistic models on the cleaned matrices: (1) a baseline weighted logit with HC1-robust standard errors, and (2) a weighted regularized logit selected by cross-validation.
+\subsection*{Model 1: Logit (Weighted, HC1 robust)}
+\noindent Math: $\displaystyle y = \beta_0 + \beta_1 \cdot 1\{smoker=Former\} + \beta_2 \cdot 1\{smoker=Current\} + \beta_3 age + \beta_4 1\{sex=male\} + \beta_5 income + \varepsilon$.
+\par\noindent Coefficients (robust SEs):
+\input{tables/ols_coefficients.tex}
+\medskip
+\noindent \textbf{Classification metrics (in-sample)}
+\par
+\input{tables/logit_metrics_in_sample.tex}
+\medskip
+\noindent \textbf{Classification metrics (out-of-sample)}
+\par
+\input{tables/logit_metrics_out_of_sample.tex}
+\medskip
+\subsection*{Model 2: Regularized Logit (CV, Weighted)}
+\noindent Math: $\displaystyle \hat{\beta} = \arg\min_{\beta} \; \frac{1}{2n} \lVert y - X\beta \rVert_2^2 + \lambda \lVert \beta \rVert_1$, with $\lambda$ chosen by cross-validation.
+\par\noindent Nonzero coefficients:
+\input{tables/lasso_coefficients.tex}
+\medskip
+\noindent \textbf{Classification metrics (in-sample)}
+\par
+\input{tables/regularized_logit_metrics_in_sample.tex}
+\medskip
+\noindent \textbf{Classification metrics (out-of-sample)}
+\par
+\input{tables/regularized_logit_metrics_out_of_sample.tex}
+\medskip
+\section{Diagnostics}
+We start with multicollinearity (VIF), then show per-model diagnostic plots.
+\paragraph{Variance Inflation Factors (VIF).} 
+\verbatiminput{artifacts/vif.txt}
+\subsection*{Model 1: Logit}
+We estimate a weighted logistic regression; residual plots use deviance residuals. Predicted probabilities are also displayed as a 1--5 risk index.
+\begin{figure}[h]\centering
+\includegraphics[width=0.75\textwidth]{figures/ols_residuals_vs_fitted.png}
+\caption{Logit: Residuals vs Fitted}\end{figure}
+\begin{figure}[h]\centering
+\includegraphics[width=0.75\textwidth]{figures/ols_qq_plot.png}
+\caption{Logit: Normal Q-Q Plot}\end{figure}
+\begin{figure}[h]\centering
+\includegraphics[width=0.75\textwidth]{figures/ols_predicted_by_smoker.png}
+\caption{Logit: Predicted Risk by Smoking Status (scaled 1--5)}\end{figure}
+\begin{figure}[h]\centering
+\includegraphics[width=0.75\textwidth]{figures/logit_roc.png}
+\caption{Logit: ROC Curve}\end{figure}
+\begin{figure}[h]\centering
+\includegraphics[width=0.75\textwidth]{figures/logit_pr.png}
+\caption{Logit: Precision--Recall Curve}\end{figure}
+\begin{figure}[h]\centering
+\includegraphics[width=0.75\textwidth]{figures/logit_calibration.png}
+\caption{Logit: Calibration by Risk Quintile}\end{figure}
+\subsection*{Model 2: Regularized Logit (CV)}
+We fit a logistic regression with an $L_1$ penalty and 10-fold cross-validation, using the same class weights as Model 1. Residuals/QQ use predictions at $\lambda_{min}$.
+\begin{figure}[h]\centering
+\includegraphics[width=0.75\textwidth]{figures/lasso_residuals_vs_fitted.png}
+\caption{Regularized Logit: Residuals vs Fitted (lambda.min)}\end{figure}
+\begin{figure}[h]\centering
+\includegraphics[width=0.75\textwidth]{figures/lasso_qq_plot.png}
+\caption{Regularized Logit: Normal Q-Q Plot (lambda.min)}\end{figure}
+\begin{figure}[h]\centering
+\includegraphics[width=0.75\textwidth]{figures/lasso_cv_plot.png}
+\caption{Regularized Logit: CV Error vs Lambda (glmnet)}\end{figure}
+\begin{figure}[h]\centering
+\includegraphics[width=0.75\textwidth]{figures/regularized_logit_roc.png}
+\caption{Regularized Logit: ROC Curve}\end{figure}
+\begin{figure}[h]\centering
+\includegraphics[width=0.75\textwidth]{figures/regularized_logit_pr.png}
+\caption{Regularized Logit: Precision--Recall Curve}\end{figure}
+\begin{figure}[h]\centering
+\includegraphics[width=0.75\textwidth]{figures/regularized_logit_calibration.png}
+\caption{Regularized Logit: Calibration by Risk Quintile}\end{figure}
+\section{Coefficient Comparison}
+\noindent \textbf{Logit vs Regularized Logit (lambda.min and lambda.1se)}
+\par
+\input{tables/ols_lasso_coef_comparison.tex}
+\medskip
+\end{document}
