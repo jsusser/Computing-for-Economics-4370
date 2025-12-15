@@ -19,7 +19,8 @@
 # R graphics device output
 Rplots.pdf
 
-# Output: keep only .tex and .pdf; ignore everything else
+# Output: keep ongit add .
+ly .tex and .pdf; ignore everything else
 output/**
 !output/*.pdf
 !output/*.tex

@@ -1,7 +1,12 @@
 fit_lasso_cv <- function(df, cfg = CFG, label = NULL, weights = NULL) {
   # Build model matrix without intercept; glmnet handles its own intercept
   if (is.null(label)) label <- if ("dead" %in% names(df)) "dead" else "risk_index"
-  mm <- model.matrix(stats::as.formula(paste(label, "~ smoker + age + age_sq + sex + log_income")), data = df)[, -1, drop = FALSE]
+  # Ensure smoker is a factor with baseline Never
+  if ("smoker" %in% names(df)) {
+    if (!is.factor(df$smoker)) df$smoker <- factor(df$smoker)
+    df$smoker <- stats::relevel(df$smoker, ref = "Never")
+  }
+  mm <- model.matrix(stats::as.formula(paste(label, "~ smoker + age + age_sq + sex + log_income + smoker:age")), data = df)[, -1, drop = FALSE]
   y  <- df[[label]]
 
   cvfit <- glmnet::cv.glmnet(
@@ -11,7 +16,7 @@ fit_lasso_cv <- function(df, cfg = CFG, label = NULL, weights = NULL) {
     nfolds = cfg$model$lasso$nfolds,
     standardize = cfg$model$lasso$standardize,
     family = cfg$model$lasso$family,
-    parallel = TRUE,
+    parallel = FALSE,
     weights = weights
   )
 

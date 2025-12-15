@@ -1,0 +1,173 @@
+\documentclass[12pt]{article}
+
+% ---------------- Packages ----------------
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath, amssymb}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{siunitx}
+\usepackage{tabularray}
+\usepackage{setspace}
+\usepackage{hyperref}
+\usepackage{verbatim}
+
+\UseTblrLibrary{booktabs}
+\UseTblrLibrary{siunitx}
+\sisetup{round-mode=places,round-precision=3}
+
+\graphicspath{{figures/}}
+
+\title{\textbf{Smoking and Mortality Risk}\\
+NHANES 2013--2014 Linked Mortality Analysis}
+\author{}
+\date{\today}
+
+\onehalfspacing
+\begin{document}
+\maketitle
+
+% =====================================================
+\section{Data and Sample Construction}
+
+We use data from the 2013--2014 NHANES cycle, merging demographic (DEMO) and smoking questionnaire (SMQ) files using the respondent identifier \texttt{SEQN}. Mortality outcomes are obtained from the NHANES public-use linked mortality files.
+
+The outcome variable is an indicator equal to one if the respondent is deceased by the end of follow-up. When multiple mortality indicators are present, we prioritize the most conservative ``dead'' classification. Observations are dropped only if the mortality label is missing.
+
+\input{tables/data_overview.tex}
+
+\paragraph{Sample Construction Rationale.}
+Dropping observations solely on the basis of missing outcomes preserves maximal sample size while avoiding post-treatment conditioning. All covariates are retained through imputation.
+
+% =====================================================
+\section{Feature Engineering and Transformations}
+
+Numeric covariates are median-imputed with missingness indicators included to preserve information. Age and income-to-poverty ratio (PIR) are standardized to facilitate coefficient comparability. To capture nonlinear effects, we include squared age and log-transformed income.
+
+Categorical variables---smoking status and biological sex---are included as factor indicators. Smoking status follows CDC coding from SMQ020 and SMQ040, with \textit{Never Smoker} as the reference category.
+
+% =====================================================
+\section{Class Imbalance and Weighting Strategy}
+
+Mortality is a relatively rare outcome in NHANES. Let $\pi = P(y=1)$ denote mortality prevalence. In imbalanced settings, unweighted logistic regression can prioritize majority-class accuracy at the expense of minority-class recall.
+
+We therefore apply inverse-prevalence weights:
+\[
+w_1 = \frac{1}{\pi}, \qquad
+w_0 = \frac{1}{1-\pi},
+\]
+normalized so that the average observation weight equals one.
+
+\input{tables/class_weights_overview.tex}
+
+This weighting scheme improves sensitivity to mortality risk without altering probability calibration targets.
+
+% =====================================================
+\section{Empirical Models}
+
+We estimate two logistic regression specifications using identical feature sets and class weights.
+
+\subsection{Model 1: Weighted Logistic Regression}
+
+\[
+\Pr(y_i=1 \mid X_i) =
+\text{logit}^{-1}
+\big(
+\beta_0
++ \beta_1 \mathbf{1}\{\text{Former}\}
++ \beta_2 \mathbf{1}\{\text{Current}\}
++ \beta_3 \text{Age}_i
++ \beta_4 \mathbf{1}\{\text{Male}\}
++ \beta_5 \text{Income}_i
+\big).
+\]
+
+Robust (HC1) standard errors are reported to account for heteroskedasticity induced by weighting.
+
+\input{tables/ols_coefficients.tex}
+
+\paragraph{Interpretation.}
+Relative to never smokers, both former and current smokers exhibit substantially higher predicted mortality risk. The magnitude increases monotonically with smoking intensity, consistent with a dose--response relationship documented in the epidemiological literature.
+
+\input{tables/logit_metrics_in_sample.tex}
+\input{tables/logit_metrics_out_of_sample.tex}
+
+% =====================================================
+\subsection{Model 2: Regularized Logistic Regression (LASSO)}
+
+To assess robustness and reduce potential overfitting, we estimate a weighted logistic regression with an $L_1$ penalty:
+\[
+\hat{\beta}
+= \arg\min_{\beta}
+\left\{
+-\frac{1}{n}\sum_{i=1}^n
+w_i\big[y_i \log p_i + (1-y_i)\log(1-p_i)\big]
++ \lambda \|\beta\|_1
+\right\},
+\quad
+p_i = \text{logit}^{-1}(X_i\beta).
+\]
+
+The tuning parameter $\lambda$ is selected via 10-fold cross-validation.
+
+\input{tables/lasso_coefficients.tex}
+
+\paragraph{Interpretation.}
+Smoking indicators remain nonzero at both $\lambda_{\min}$ and $\lambda_{1se}$, indicating that smoking status is among the most stable predictors of mortality risk even under aggressive penalization.
+
+\input{tables/regularized_logit_metrics_in_sample.tex}
+\input{tables/regularized_logit_metrics_out_of_sample.tex}
+
+% =====================================================
+\section{Diagnostics and Model Fit}
+
+Variance inflation factors indicate no problematic multicollinearity.
+
+\verbatiminput{artifacts/vif.txt}
+
+\paragraph{Residual Diagnostics.}
+Deviance residuals show mild heteroskedasticity, expected in binary outcome models. Q--Q plots exhibit heavier tails than Gaussian benchmarks, reinforcing the use of robust inference.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{ols_residuals_vs_fitted.png}
+\caption{Weighted Logit: Residuals vs Fitted}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{ols_qq_plot.png}
+\caption{Weighted Logit: Q--Q Plot}
+\end{figure}
+
+\paragraph{Risk Stratification.}
+Predicted probabilities are discretized into quintiles to form a 1--5 risk index. Higher smoking categories consistently map into higher risk quintiles.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{ols_predicted_by_smoker.png}
+\caption{Predicted Mortality Risk by Smoking Status}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{logit_roc.png}
+\caption{ROC Curve}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.75\textwidth]{logit_calibration.png}
+\caption{Calibration by Risk Quintile}
+\end{figure}
+
+% =====================================================
+\section{Coefficient Stability Comparison}
+
+\input{tables/ols_lasso_coef_comparison.tex}
+
+\paragraph{Key Result.}
+Smoking status coefficients are stable across estimation strategies, while income effects attenuate under regularization, suggesting smoking behavior captures risk information not easily substituted by socioeconomic controls.
+
+% =====================================================
+\section{Conclusion}
+
+Across weighted, robust, and penalized specifications, smoking status emerges as a dominant and monotonic predictor of mortality risk. Regularization confirms that this relationship is not an artifact of overfitting or collinearity. These results reinforce the causal salience of smoking behavior in population mortality risk models.
+
+\end{document}

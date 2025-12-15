@@ -1,6 +1,6 @@
-﻿# Smoking and Mortality (NHANES 2013â€“2014)
+# Smoking and Mortality (NHANES 2013–2014)
 
-Analyze smoking and mortality using NHANES DEMO/SMQ linked to NCHS mortality. The pipeline is modular, reproducible, and produces a LaTeX report with tables and figures in `output/`.
+Analyze smoking and mortality using NHANES DEMO/SMQ linked to NCHS mortality. The pipeline is modular and reproducible, producing a single LaTeX report with tables and figures in `output/`.
 
 ## Repository Layout
 
@@ -12,10 +12,10 @@ Analyze smoking and mortality using NHANES DEMO/SMQ linked to NCHS mortality. Th
   - `cleaning.R`: Build feature matrix `X` and label `y` with imputation and standardization.
   - `io.R`: Table/figure writers and report helpers.
   - `reporting.R`: Programmatic LaTeX report generator (`output/report.tex`).
-  - `helpers.R`: Small helpers (plot saving, panels, sanitization).
+  - `helpers.R`: Plot saving, panel grid, sanitization.
 - `core/` (modeling & diagnostics)
-  - `modeling.R`: Weighted logistic regression (HC1 robust SEs).
-  - `modeling_lasso.R`: Regularized logistic regression (glmnet with CV).
+  - `modeling.R`: Weighted logistic regression (HC1 robust SEs), includes age×smoker interaction.
+  - `modeling_lasso.R`: Regularized logistic regression (glmnet with CV), includes the same features.
   - `diagnostics.R`: Residual, QQ, and prediction plots.
 - `scripts/`
   - `fetch_nhanes_raw.R`: Download raw NHANES and mortality assets into `resources/`.
@@ -25,13 +25,15 @@ Analyze smoking and mortality using NHANES DEMO/SMQ linked to NCHS mortality. Th
 - `clean-data/`
   - Model-ready matrices (`X.csv`, `y.csv`) and a full cleaned frame (`cleaned_full.csv`).
 - `output/`
-  - `report.tex`, `report.pdf`: Generated LaTeX and PDF.
-  - `report_final.tex`, `report_final.pdf`: Curated final report and its PDF.
-  - `tables/`, `figures/`, `artifacts/`: All auxiliary outputs for the report.
+  - `report.tex`, `report.pdf`: Single programmatic LaTeX and PDF (the only report produced).
+  - `tables/`, `figures/`, `artifacts/`: Auxiliary outputs for the report.
 
 ## Requirements
 
-- R 4.4+ with Rscript on PATH (Windows path example: `C:\\Program Files\\R\\R-4.4.2\\bin\\Rscript.exe`).
+- R 4.4+ with Rscript (use your explicit Rscript path).
+  - Windows examples:
+    - System install: `C:\\Program Files\\R\\R-4.4.2\\bin\\Rscript.exe`
+    - User install: `C:\\Users\\<you>\\bin\\Rscript.exe`
 - TeX Live/tinytex or equivalent LaTeX toolchain (latexmk/pdflatex).
 - Internet access to download packages and NHANES/mortality assets on first run.
 
@@ -44,23 +46,24 @@ If your R has no CRAN mirror configured, the main script sets `https://cran.rstu
 
 1) Generate clean matrices (from downloaded NHANES CSVs if already present, or fetch on demand if your flow includes `fetch_nhanes_raw.R`):
 
-- Windows example:
-  - `powershell.exe -NoProfile -Command "& 'C:\\Program Files\\R\\R-4.4.2\\bin\\Rscript.exe' 'scripts\\make_clean_matrices_only.R'"`
+- Windows examples:
+  - System Rscript: `powershell.exe -NoProfile -Command "& 'C:\\Program Files\\R\\R-4.4.2\\bin\\Rscript.exe' 'scripts\\make_clean_matrices_only.R'"`
+  - User Rscript: `powershell.exe -NoProfile -Command "& 'C:\\Users\\<you>\\bin\\Rscript.exe' 'scripts\\make_clean_matrices_only.R'"`
 
 2) Build models and the report:
 
-- Windows example:
-  - `powershell.exe -NoProfile -Command "& 'C:\\Program Files\\R\\R-4.4.2\\bin\\Rscript.exe' 'Group Final Project.R'"`
+- Windows examples:
+  - System Rscript: `powershell.exe -NoProfile -Command "& 'C:\\Program Files\\R\\R-4.4.2\\bin\\Rscript.exe' 'Group Final Project.R'"`
+  - User Rscript: `powershell.exe -NoProfile -Command "& 'C:\\Users\\<you>\\bin\\Rscript.exe' 'Group Final Project.R'"`
 
 Outputs:
-- `output/report.pdf` (programmatically generated from utils/reporting.R)
-- `output/report_final.pdf` (curated final LaTeX template, compiled after the pipeline writes all inputs)
+- `output/report.pdf` (programmatically generated from utils/reporting.R; this is the only report)
 
 ## Data Pipeline (Chronological)
 
 1. Raw ingestion (optional if CSVs already present):
    - DEMO_`<wave>`.csv (demographics) and SMQ_`<wave>`.csv (smoking) pulled via `nhanesA`.
-   - Mortality public-use `.dat` read via CDCâ€™s setup script and saved to CSV.
+   - Mortality public-use `.dat` read via CDC’s setup script and saved to CSV.
    - All raw assets saved under `resources/nhanes` and `resources/mortality`.
 
 2. Join and cleaning (scripts/make_clean_matrices_only.R):
@@ -79,17 +82,18 @@ Outputs:
    - Weighted Logit (HC1 robust) with inverse-prevalence class weights.
    - Regularized Logit (glmnet CV) with the same features.
    - Diagnostics and metrics:
-     - Residual and QQ plots, predicted risk by smoking (scaled 1â€“5 for presentation).
+     - Residual and QQ plots, predicted risk by smoking (scaled 1–5 for presentation).
      - Classification metrics (Accuracy, LogLoss, Brier, ROC AUC) IN/OUT sample.
      - LASSO CV plot and coefficient tables.
    - Report build:
      - Generate `output/report.tex` and compile to `output/report.pdf`.
-     - Compile `output/report_final.tex` using the generated tables.
 
 ## Reproducibility
 
-- `CFG$seed` sets RNG for splits and CV; class weighting is deterministic given data.
-- All paths and filenames are centralized in `config/config.R`.
+- Deterministic seeds: `CFG$seed` governs splits and CV; class weights depend only on the label prevalence.
+- Centralized config: all paths, package list, and filenames live in `config/config.R`.
+- Baseline and interaction: smoker baseline is set to `Never` across all models; the age×smoker interaction is included in both logistic and regularized models.
+- One report: only `output/report.pdf` is produced; the script cleans previous outputs and LaTeX aux files.
 
 ## Troubleshooting
 
@@ -100,10 +104,12 @@ Outputs:
 ## Notes
 
 - Raw assets are immutable in `resources/`; cleaning never overwrites them.
-- The pipeline excludes race/education from modeling by design to avoid unnecessary complexity and collinearity here; update `utils/cleaning.R` if you want to re-introduce them.
-- Monte Carlo and Neural Network components have been removed for simplicity and runtime efficiency.
+- The pipeline excludes race/education from modeling by design to reduce collinearity; update `utils/cleaning.R` to re-introduce them.
+- Neural Network components have been removed; only logistic and regularized logistic models are kept.
 
 ## Cleaning Outputs / Artifacts
 
 - The main script removes previous `output/tables`, `output/figures`, and `output/artifacts` at start.
-- All LaTeX logs/aux files are generated inside `output/`, not the project root. A `.gitignore` excludes common temporary files and output artifacts.
+- It also removes stale `report_final.*` / `report_testing.*` and LaTeX aux files, leaving only `report.tex` and `report.pdf` plus subfolders.
+- All artifacts live under `output/`; the repo keeps `report-to-be-turned-in.tex` at the root as requested.
+
