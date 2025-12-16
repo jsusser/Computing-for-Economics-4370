@@ -134,9 +134,11 @@ if (!is.null(results$vif)) print(results$vif) else cat("(not available)\n")
 plots <- make_diagnostics_plots(results$model, model_label = "Logit")
 p3    <- make_predictions_plot(results$model, sim_df, model_label = "Logit", scale_to_five = TRUE)
 
-print(plots$p1)
-print(plots$p2)
-print(p3)
+if (interactive()) {
+  print(plots$p1)
+  print(plots$p2)
+  print(p3)
+}
 
 save_plots(plots$p1, plots$p2, p3, out_dir)
 

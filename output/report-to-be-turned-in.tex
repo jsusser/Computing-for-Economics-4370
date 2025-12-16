@@ -14,18 +14,49 @@
 \usepackage{verbatim}
 \usepackage{placeins}
 
+% ---------------- Paragraph formatting (your requests) ----------------
+\usepackage{indentfirst}            % indent first paragraph after section headings
+\setlength{\parindent}{15pt}        % professional academic indent
+\setlength{\parskip}{0.4em}         % subtle, obvious paragraph breaks
+
 \UseTblrLibrary{booktabs}
 \UseTblrLibrary{siunitx}
 \sisetup{round-mode=places,round-precision=3}
 
-\graphicspath{{figures/}}
+% Graphics path (robust)
+\graphicspath{{./figures/}{figures/}}
 
 % Consistent figure sizing
 \newcommand{\figwidth}{0.78\textwidth}
 
+% ---------------- Float / placement control ----------------
+% Keep floats close to where they're declared and stop drifting across sections.
+\renewcommand{\topfraction}{0.85}
+\renewcommand{\bottomfraction}{0.85}
+\renewcommand{\textfraction}{0.10}
+\renewcommand{\floatpagefraction}{0.80}
+
+% Centered table inputs: wraps \input{tables/...} in a real table float.
+% Use this when your tables/*.tex contain only the tabular (no \begin{table}).
+\newcommand{\centertableinput}[1]{%
+\begin{table}[H]
+\centering
+\input{#1}
+\end{table}
+}
+
+% Centered figures with consistent sizing + hard placement.
+\newcommand{\centerfig}[2]{%
+\begin{figure}[H]
+\centering
+\includegraphics[width=\figwidth]{#1}
+\caption{#2}
+\end{figure}
+}
+
 \title{\textbf{Smoking and Mortality Risk}\\
 NHANES 2013--2014 Linked Mortality Analysis}
-\author{}
+\author{Oliver Pizzimbono and Joseph Susser}
 \date{\today}
 
 \onehalfspacing
@@ -39,7 +70,7 @@ We use data from the 2013--2014 NHANES cycle, merging demographic and smoking qu
 
 The outcome variable is an indicator equal to one if the respondent is deceased by the end of follow up. When multiple mortality indicators are present, the most conservative dead classification is used. Observations are dropped only when the mortality label is missing.
 
-\input{tables/data_overview.tex}
+\centertableinput{tables/data_overview.tex}
 
 \paragraph{Sample Construction Rationale.}
 
@@ -70,7 +101,7 @@ w_0 = \frac{1}{1 - \pi},
 \]
 and normalized so that the average observation weight equals one.
 
-\input{tables/class_weights_overview.tex}
+\centertableinput{tables/class_weights_overview.tex}
 
 This approach improves sensitivity to mortality risk while preserving meaningful probability calibration.
 
@@ -100,7 +131,7 @@ Two logistic regression specifications are estimated using identical covariates 
 
 Robust HC1 standard errors are reported to account for heteroskedasticity induced by weighting.
 
-\input{tables/ols_coefficients.tex}
+\centertableinput{tables/ols_coefficients.tex}
 
 \paragraph{Interpretation of Coefficients.}
 
@@ -110,9 +141,9 @@ Age is the dominant predictor of baseline mortality, and the positive squared ag
 
 The interaction terms between age and smoking status are modest in magnitude and only weakly statistically significant. Empirically, this suggests that the marginal effect of smoking does not vary sharply with age. However, these interaction terms still exert a subtle influence on predicted risk by allowing smoking related risk to interact with the steep age gradient in mortality.
 
-\input{tables/logit_metrics_in_sample.tex}
+\centertableinput{tables/logit_metrics_in_sample.tex}
 
-\input{tables/logit_metrics_out_of_sample.tex}
+\centertableinput{tables/logit_metrics_out_of_sample.tex}
 
 \paragraph{Predictive Performance.}
 
@@ -138,15 +169,15 @@ p_i = \text{logit}^{-1}(X_i\beta).
 
 The tuning parameter $\lambda$ is selected using ten fold cross validation.
 
-\input{tables/lasso_coefficients.tex}
+\centertableinput{tables/lasso_coefficients.tex}
 
 \paragraph{Interpretation Under Penalization.}
 
 Smoking indicators and age terms remain nonzero under both the minimum error and one standard error penalty rules. Out of sample discrimination remains essentially unchanged, indicating that the primary smoking related signal is stable and not driven by overfitting or collinearity.
 
-\input{tables/regularized_logit_metrics_in_sample.tex}
+\centertableinput{tables/regularized_logit_metrics_in_sample.tex}
 
-\input{tables/regularized_logit_metrics_out_of_sample.tex}
+\centertableinput{tables/regularized_logit_metrics_out_of_sample.tex}
 
 \FloatBarrier
 
@@ -155,23 +186,29 @@ Smoking indicators and age terms remain nonzero under both the minimum error and
 
 Variance inflation factors indicate no problematic multicollinearity.
 
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.85\linewidth}
+\small
 \verbatiminput{artifacts/vif.txt}
+\end{minipage}
+\caption{Variance Inflation Factors}
+\end{figure}
 
 \paragraph{Residual Diagnostics.}
 
 Residual based diagnostics indicate mild heteroskedasticity, which is expected in weighted binary outcome models. Distributional checks suggest heavier tails than a Gaussian benchmark, reinforcing the use of robust inference.
 
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\figwidth]{ols_residuals_vs_fitted.png}
-\caption{Residuals versus Fitted Values}
-\end{figure}
+\centerfig{ols_residuals_vs_fitted.png}{Residuals versus Fitted Values (Model 1)}
+\centerfig{ols_qq_plot.png}{Normal Q Q Plot (Model 1)}
 
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\figwidth]{ols_qq_plot.png}
-\caption{Normal Q Q Plot}
-\end{figure}
+\FloatBarrier
+
+\subsection*{Regularized Model Diagnostics}
+
+% NOTE: These two files must exist in ./figures/ (or adjust filenames to match your outputs).
+\centerfig{lasso_residuals_vs_fitted.png}{Residuals versus Fitted Values (Regularized Model)}
+\centerfig{lasso_qq_plot.png}{Normal Q Q Plot (Regularized Model)}
 
 \FloatBarrier
 
@@ -179,36 +216,17 @@ Residual based diagnostics indicate mild heteroskedasticity, which is expected i
 
 Predicted probabilities are discretized into quintiles to form a one to five risk index. Higher smoking categories map systematically into higher risk groups.
 
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\figwidth]{ols_predicted_by_smoker.png}
-\caption{Predicted Mortality Risk by Smoking Status}
-\end{figure}
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\figwidth]{logit_roc.png}
-\caption{ROC Curve}
-\end{figure}
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\figwidth]{logit_pr.png}
-\caption{Precision Recall Curve}
-\end{figure}
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\figwidth]{logit_calibration.png}
-\caption{Calibration by Risk Quintile}
-\end{figure}
+\centerfig{ols_predicted_by_smoker.png}{Predicted Mortality Risk by Smoking Status}
+\centerfig{logit_roc.png}{ROC Curve}
+\centerfig{logit_pr.png}{Precision Recall Curve}
+\centerfig{logit_calibration.png}{Calibration by Risk Quintile}
 
 \FloatBarrier
 
 % =====================================================
 \section{Coefficient Stability Comparison}
 
-\input{tables/ols_lasso_coef_comparison.tex}
+\centertableinput{tables/ols_lasso_coef_comparison.tex}
 
 \paragraph{Key Result.}
 
