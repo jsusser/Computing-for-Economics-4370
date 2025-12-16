@@ -14,10 +14,15 @@
 \usepackage{verbatim}
 \usepackage{placeins}
 
-% ---------------- Paragraph formatting (your requests) ----------------
+% ---------------- Paragraph formatting ----------------
 \usepackage{indentfirst}            % indent first paragraph after section headings
 \setlength{\parindent}{15pt}        % professional academic indent
 \setlength{\parskip}{0.4em}         % subtle, obvious paragraph breaks
+
+% ---------------- Equation overflow protection ----------------
+\allowdisplaybreaks                 % allow page breaks in multi-line displays
+\setlength{\emergencystretch}{2em}  % prevent overfull lines
+\sloppy                             % safer line-breaking (keeps equations/text from running off page)
 
 \UseTblrLibrary{booktabs}
 \UseTblrLibrary{siunitx}
@@ -30,14 +35,12 @@
 \newcommand{\figwidth}{0.78\textwidth}
 
 % ---------------- Float / placement control ----------------
-% Keep floats close to where they're declared and stop drifting across sections.
 \renewcommand{\topfraction}{0.85}
 \renewcommand{\bottomfraction}{0.85}
 \renewcommand{\textfraction}{0.10}
 \renewcommand{\floatpagefraction}{0.80}
 
-% Centered table inputs: wraps \input{tables/...} in a real table float.
-% Use this when your tables/*.tex contain only the tabular (no \begin{table}).
+% Centered table inputs: use only if tables/*.tex contain just tabular content (no \begin{table}).
 \newcommand{\centertableinput}[1]{%
 \begin{table}[H]
 \centering
@@ -45,7 +48,7 @@
 \end{table}
 }
 
-% Centered figures with consistent sizing + hard placement.
+% Centered figures, placed exactly here.
 \newcommand{\centerfig}[2]{%
 \begin{figure}[H]
 \centering
@@ -95,13 +98,26 @@ Mortality is a relatively rare outcome in NHANES. Let $\pi = P(y = 1)$ denote mo
 In imbalanced settings, unweighted logistic regression can emphasize majority class accuracy at the expense of identifying high risk individuals.
 
 Inverse prevalence class weights are applied
-\[
-w_1 = \frac{1}{\pi}, \qquad
+\begin{equation}
+w_1 = \frac{1}{\pi},
+\qquad
 w_0 = \frac{1}{1 - \pi},
-\]
+\end{equation}
 and normalized so that the average observation weight equals one.
 
-\centertableinput{tables/class_weights_overview.tex}
+% You said the weights file isn't yours / missing, so the table is included directly here:
+\begin{table}[H]
+\centering
+\caption{Inverse-prevalence class weights (illustrative with $\pi \approx 0.08$)}
+\begin{tabular}{lcc}
+\toprule
+Class & Raw weight & Notes \\
+\midrule
+$y=1$ (deceased) & $1/\pi \approx 12.5$ & upweights rare class \\
+$y=0$ (alive)    & $1/(1-\pi) \approx 1.087$ & mild downweight \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 This approach improves sensitivity to mortality risk while preserving meaningful probability calibration.
 
@@ -114,20 +130,22 @@ Two logistic regression specifications are estimated using identical covariates 
 
 \subsection{Model 1: Weighted Logistic Regression}
 
-\[
+\begin{align}
 \Pr(y_i = 1 \mid X_i)
-= \text{logit}^{-1}\Big(
+&= \text{logit}^{-1}\Big(
 \beta_0
 + \beta_1 \mathbf{1}\{\text{Former}\}
 + \beta_2 \mathbf{1}\{\text{Current}\}
 + \beta_3 \text{Age}_i
 + \beta_4 \text{Age}_i^2
+\nonumber\\
+&\quad
 + \beta_5 \mathbf{1}\{\text{Male}\}
 + \beta_6 \log(\text{Income}_i)
-+ \beta_7 \text{Age}_i \times \mathbf{1}\{\text{Former}\}
-+ \beta_8 \text{Age}_i \times \mathbf{1}\{\text{Current}\}
++ \beta_7 \big(\text{Age}_i \times \mathbf{1}\{\text{Former}\}\big)
++ \beta_8 \big(\text{Age}_i \times \mathbf{1}\{\text{Current}\}\big)
 \Big).
-\]
+\end{align}
 
 Robust HC1 standard errors are reported to account for heteroskedasticity induced by weighting.
 
@@ -155,17 +173,18 @@ Despite low outcome prevalence, the model exhibits strong discrimination. Precis
 \subsection{Model 2: Regularized Logistic Regression}
 
 To assess robustness and reduce potential overfitting, a weighted logistic regression with an L1 penalty is estimated
-\[
+\begin{align}
 \hat{\beta}
-= \arg\min_{\beta}
-\left[
+&= \arg\min_{\beta}
+\Bigg[
 -\frac{1}{n}\sum_{i=1}^n
-w_i \big( y_i \log p_i + (1 - y_i)\log(1 - p_i) \big)
+w_i \Big( y_i \log p_i + (1 - y_i)\log(1 - p_i) \Big)
 + \lambda \|\beta\|_1
-\right],
-\quad
-p_i = \text{logit}^{-1}(X_i\beta).
-\]
+\Bigg],
+\nonumber\\
+p_i
+&= \text{logit}^{-1}(X_i\beta).
+\end{align}
 
 The tuning parameter $\lambda$ is selected using ten fold cross validation.
 
@@ -206,7 +225,7 @@ Residual based diagnostics indicate mild heteroskedasticity, which is expected i
 
 \subsection*{Regularized Model Diagnostics}
 
-% NOTE: These two files must exist in ./figures/ (or adjust filenames to match your outputs).
+% NOTE: These files must exist in ./figures/. If your code uses different names, rename here.
 \centerfig{lasso_residuals_vs_fitted.png}{Residuals versus Fitted Values (Regularized Model)}
 \centerfig{lasso_qq_plot.png}{Normal Q Q Plot (Regularized Model)}
 
@@ -259,3 +278,4 @@ From a policy perspective, the results highlight the importance of smoking cessa
 Smoking status remains a dominant predictor of mortality risk in NHANES linked data. While age explains much of the variation in baseline mortality, smoking history shifts individuals into persistently higher risk regions of the age distribution. Former smokers appear high risk in part because they are older on average, not because quitting is ineffective. The evidence supports a clear conclusion. Smoking cessation matters, and quitting earlier matters most.
 
 \end{document}
+``` :contentReference[oaicite:0]{index=0}
