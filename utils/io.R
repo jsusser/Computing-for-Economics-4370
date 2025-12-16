@@ -156,23 +156,7 @@ save_coef_comparison <- function(tab, out_dir = CFG$dirs$out, cfg = CFG) {
 }
 
 # Simple combined LaTeX for LASSO MC (selection + nonzero summary)
-save_nn_metrics <- function(nn_res, out_dir = CFG$dirs$out, cfg = CFG) {
-  dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
-  tab <- tibble::tibble(
-    metric = c("Accuracy", "LogLoss", "MSE", "R2"),
-    value = c(nn_res$acc, nn_res$logloss, nn_res$mse, nn_res$r2)
-  )
-  suppressWarnings(
-    modelsummary::datasummary_df(
-      tab,
-      output = file.path(out_dir, cfg$files$nn_metrics_tex)
-    )
-  )
-  # Text summary
-  txt_path <- file.path(out_dir, cfg$files$nn_summary_txt)
-  capture.output(print(tab), file = txt_path)
-  invisible(list(tex = file.path(out_dir, cfg$files$nn_metrics_tex), txt = txt_path))
-}
+## (intentionally blank: neural network helper removed)
 
 save_model_metrics_tex <- function(metrics_list, out_dir = CFG$dirs$out, cfg = CFG) {
   dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)

@@ -22,7 +22,13 @@ fit_logit_model <- function(df, robust_type = CFG$model$robust_se_type, label = 
   if (is.null(label)) {
     label <- if ("dead" %in% names(df)) "dead" else "risk_index"
   }
-  fml <- stats::as.formula(paste(label, "~ smoker + age + age_sq + sex + log_income"))
+  # Ensure smoker is a factor with baseline Never
+  if ("smoker" %in% names(df)) {
+    if (!is.factor(df$smoker)) df$smoker <- factor(df$smoker)
+    df$smoker <- stats::relevel(df$smoker, ref = "Never")
+  }
+  # Include age x smoker interaction
+  fml <- stats::as.formula(paste(label, "~ smoker + age + age_sq + sex + log_income + smoker:age"))
   if (is.null(weights)) {
     logit_mod <- stats::glm(fml, data = df, family = stats::binomial(link = "logit"))
   } else {

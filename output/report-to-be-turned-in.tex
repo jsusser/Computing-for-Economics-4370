@@ -1,0 +1,261 @@
+\documentclass[12pt]{article}
+
+% ---------------- Packages ----------------
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath, amssymb}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{siunitx}
+\usepackage{tabularray}
+\usepackage{setspace}
+\usepackage{hyperref}
+\usepackage{verbatim}
+\usepackage{placeins}
+
+% ---------------- Paragraph formatting (your requests) ----------------
+\usepackage{indentfirst}            % indent first paragraph after section headings
+\setlength{\parindent}{15pt}        % professional academic indent
+\setlength{\parskip}{0.4em}         % subtle, obvious paragraph breaks
+
+\UseTblrLibrary{booktabs}
+\UseTblrLibrary{siunitx}
+\sisetup{round-mode=places,round-precision=3}
+
+% Graphics path (robust)
+\graphicspath{{./figures/}{figures/}}
+
+% Consistent figure sizing
+\newcommand{\figwidth}{0.78\textwidth}
+
+% ---------------- Float / placement control ----------------
+% Keep floats close to where they're declared and stop drifting across sections.
+\renewcommand{\topfraction}{0.85}
+\renewcommand{\bottomfraction}{0.85}
+\renewcommand{\textfraction}{0.10}
+\renewcommand{\floatpagefraction}{0.80}
+
+% Centered table inputs: wraps \input{tables/...} in a real table float.
+% Use this when your tables/*.tex contain only the tabular (no \begin{table}).
+\newcommand{\centertableinput}[1]{%
+\begin{table}[H]
+\centering
+\input{#1}
+\end{table}
+}
+
+% Centered figures with consistent sizing + hard placement.
+\newcommand{\centerfig}[2]{%
+\begin{figure}[H]
+\centering
+\includegraphics[width=\figwidth]{#1}
+\caption{#2}
+\end{figure}
+}
+
+\title{\textbf{Smoking and Mortality Risk}\\
+NHANES 2013--2014 Linked Mortality Analysis}
+\author{Oliver Pizzimbono and Joseph Susser}
+\date{\today}
+
+\onehalfspacing
+\begin{document}
+\maketitle
+
+% =====================================================
+\section{Data and Sample Construction}
+
+We use data from the 2013--2014 NHANES cycle, merging demographic and smoking questionnaire files using the respondent identifier \texttt{SEQN}. Mortality outcomes are obtained from the public use NHANES linked mortality files.
+
+The outcome variable is an indicator equal to one if the respondent is deceased by the end of follow up. When multiple mortality indicators are present, the most conservative dead classification is used. Observations are dropped only when the mortality label is missing.
+
+\centertableinput{tables/data_overview.tex}
+
+\paragraph{Sample Construction Rationale.}
+
+Dropping observations solely due to missing outcomes preserves sample size while avoiding post treatment conditioning. All covariates are retained through imputation so that missingness does not mechanically reduce statistical power.
+
+\FloatBarrier
+
+% =====================================================
+\section{Feature Engineering and Transformations}
+
+Numeric covariates are median imputed with missingness indicators included. Age and income to poverty ratio are standardized to facilitate coefficient comparability. To capture nonlinear mortality dynamics, squared age is included. Income enters in logarithmic form to reduce skewness.
+
+Categorical variables for smoking status and biological sex are included as factor indicators. Smoking status follows CDC coding from SMQ020 and SMQ040, with Never Smoker as the reference category. To allow smoking related risk to vary over the life cycle, interactions between smoking status and age are included.
+
+\FloatBarrier
+
+% =====================================================
+\section{Class Imbalance and Weighting Strategy}
+
+Mortality is a relatively rare outcome in NHANES. Let $\pi = P(y = 1)$ denote mortality prevalence, which is approximately eight percent in this sample.
+
+In imbalanced settings, unweighted logistic regression can emphasize majority class accuracy at the expense of identifying high risk individuals.
+
+Inverse prevalence class weights are applied
+\[
+w_1 = \frac{1}{\pi}, \qquad
+w_0 = \frac{1}{1 - \pi},
+\]
+and normalized so that the average observation weight equals one.
+
+\centertableinput{tables/class_weights_overview.tex}
+
+This approach improves sensitivity to mortality risk while preserving meaningful probability calibration.
+
+\FloatBarrier
+
+% =====================================================
+\section{Empirical Models}
+
+Two logistic regression specifications are estimated using identical covariates and class weights.
+
+\subsection{Model 1: Weighted Logistic Regression}
+
+\[
+\Pr(y_i = 1 \mid X_i)
+= \text{logit}^{-1}\Big(
+\beta_0
++ \beta_1 \mathbf{1}\{\text{Former}\}
++ \beta_2 \mathbf{1}\{\text{Current}\}
++ \beta_3 \text{Age}_i
++ \beta_4 \text{Age}_i^2
++ \beta_5 \mathbf{1}\{\text{Male}\}
++ \beta_6 \log(\text{Income}_i)
++ \beta_7 \text{Age}_i \times \mathbf{1}\{\text{Former}\}
++ \beta_8 \text{Age}_i \times \mathbf{1}\{\text{Current}\}
+\Big).
+\]
+
+Robust HC1 standard errors are reported to account for heteroskedasticity induced by weighting.
+
+\centertableinput{tables/ols_coefficients.tex}
+
+\paragraph{Interpretation of Coefficients.}
+
+Smoking status is strongly associated with mortality risk after adjustment. Relative to never smokers, current smokers exhibit substantially higher odds of death, while former smokers face elevated but intermediate risk.
+
+Age is the dominant predictor of baseline mortality, and the positive squared age term implies accelerating risk at older ages.
+
+The interaction terms between age and smoking status are modest in magnitude and only weakly statistically significant. Empirically, this suggests that the marginal effect of smoking does not vary sharply with age. However, these interaction terms still exert a subtle influence on predicted risk by allowing smoking related risk to interact with the steep age gradient in mortality.
+
+\centertableinput{tables/logit_metrics_in_sample.tex}
+
+\centertableinput{tables/logit_metrics_out_of_sample.tex}
+
+\paragraph{Predictive Performance.}
+
+Despite low outcome prevalence, the model exhibits strong discrimination. Precision recall performance substantially exceeds baseline prevalence, indicating meaningful concentration of deaths among high risk predictions. Calibration improves monotonically across predicted risk strata.
+
+\FloatBarrier
+
+% =====================================================
+\subsection{Model 2: Regularized Logistic Regression}
+
+To assess robustness and reduce potential overfitting, a weighted logistic regression with an L1 penalty is estimated
+\[
+\hat{\beta}
+= \arg\min_{\beta}
+\left[
+-\frac{1}{n}\sum_{i=1}^n
+w_i \big( y_i \log p_i + (1 - y_i)\log(1 - p_i) \big)
++ \lambda \|\beta\|_1
+\right],
+\quad
+p_i = \text{logit}^{-1}(X_i\beta).
+\]
+
+The tuning parameter $\lambda$ is selected using ten fold cross validation.
+
+\centertableinput{tables/lasso_coefficients.tex}
+
+\paragraph{Interpretation Under Penalization.}
+
+Smoking indicators and age terms remain nonzero under both the minimum error and one standard error penalty rules. Out of sample discrimination remains essentially unchanged, indicating that the primary smoking related signal is stable and not driven by overfitting or collinearity.
+
+\centertableinput{tables/regularized_logit_metrics_in_sample.tex}
+
+\centertableinput{tables/regularized_logit_metrics_out_of_sample.tex}
+
+\FloatBarrier
+
+% =====================================================
+\section{Diagnostics and Model Fit}
+
+Variance inflation factors indicate no problematic multicollinearity.
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.85\linewidth}
+\small
+\verbatiminput{artifacts/vif.txt}
+\end{minipage}
+\caption{Variance Inflation Factors}
+\end{figure}
+
+\paragraph{Residual Diagnostics.}
+
+Residual based diagnostics indicate mild heteroskedasticity, which is expected in weighted binary outcome models. Distributional checks suggest heavier tails than a Gaussian benchmark, reinforcing the use of robust inference.
+
+\centerfig{ols_residuals_vs_fitted.png}{Residuals versus Fitted Values (Model 1)}
+\centerfig{ols_qq_plot.png}{Normal Q Q Plot (Model 1)}
+
+\FloatBarrier
+
+\subsection*{Regularized Model Diagnostics}
+
+% NOTE: These two files must exist in ./figures/ (or adjust filenames to match your outputs).
+\centerfig{lasso_residuals_vs_fitted.png}{Residuals versus Fitted Values (Regularized Model)}
+\centerfig{lasso_qq_plot.png}{Normal Q Q Plot (Regularized Model)}
+
+\FloatBarrier
+
+\paragraph{Risk Stratification.}
+
+Predicted probabilities are discretized into quintiles to form a one to five risk index. Higher smoking categories map systematically into higher risk groups.
+
+\centerfig{ols_predicted_by_smoker.png}{Predicted Mortality Risk by Smoking Status}
+\centerfig{logit_roc.png}{ROC Curve}
+\centerfig{logit_pr.png}{Precision Recall Curve}
+\centerfig{logit_calibration.png}{Calibration by Risk Quintile}
+
+\FloatBarrier
+
+% =====================================================
+\section{Coefficient Stability Comparison}
+
+\centertableinput{tables/ols_lasso_coef_comparison.tex}
+
+\paragraph{Key Result.}
+
+Smoking coefficients remain large and correctly ordered across estimation strategies. Income effects attenuate under regularization, suggesting that smoking behavior captures mortality risk that is not easily substituted by socioeconomic controls.
+
+\FloatBarrier
+
+% =====================================================
+\section{Summary and Policy Implications}
+
+Three main conclusions emerge from this analysis.
+
+First, smoking status is a strong and monotonic predictor of mortality risk. Current smokers face the highest risk, former smokers face intermediate risk, and never smokers face the lowest risk.
+
+Second, these patterns are robust to nonlinear age controls, class weighting, and regularization.
+
+Third, age composition plays a central role in shaping observed risk among former smokers.
+
+Former smokers in this sample are on average approximately thirteen years older than current smokers. As a result, they are concentrated in a higher baseline risk region of the age distribution. Although the estimated age by smoking interaction terms are modest, their presence allows age composition differences to translate into higher predicted mortality risk for former smokers. Confidence intervals for former and current smokers overlap substantially and remain well above those for never smokers.
+
+These findings should not be interpreted as evidence that quitting smoking fails to reduce risk. Instead, they suggest partial but incomplete risk reversal when cessation occurs later in life. Former smokers are consistently classified as lower risk than current smokers at comparable ages, but remain elevated relative to never smokers due to accumulated exposure and higher baseline mortality.
+
+\paragraph{Policy Implications.}
+
+From a policy perspective, the results highlight the importance of smoking cessation early in the life cycle. Once individuals reach older ages, baseline mortality risk dominates, limiting the observable benefits of cessation within a finite follow up window. Interventions that encourage early cessation and prevention are therefore likely to generate substantially larger lifetime mortality reductions than those occurring later in life. Continued investment in early prevention and cessation programs remains strongly justified.
+
+% =====================================================
+\section{Conclusion}
+
+Smoking status remains a dominant predictor of mortality risk in NHANES linked data. While age explains much of the variation in baseline mortality, smoking history shifts individuals into persistently higher risk regions of the age distribution. Former smokers appear high risk in part because they are older on average, not because quitting is ineffective. The evidence supports a clear conclusion. Smoking cessation matters, and quitting earlier matters most.
+
+\end{document}

@@ -3,7 +3,14 @@
 
 # Config and packages -------------------------------------
 config_dir <- "config"
-source(file.path(config_dir, "config.R"))
+# BOM-safe source
+safe_source <- function(path) {
+  txt <- try(readLines(path, warn = FALSE, encoding = "UTF-8"), silent = TRUE)
+  if (inherits(txt, "try-error")) stop("Failed to read ", path)
+  if (length(txt) > 0 && grepl("^\ufeff", txt[1])) txt[1] <- sub("^\ufeff", "", txt[1], perl = TRUE)
+  tf <- tempfile(fileext = ".R"); writeLines(txt, tf, useBytes = TRUE); sys.source(tf, envir = .GlobalEnv); invisible(TRUE)
+}
+safe_source(file.path(config_dir, "config.R"))
 
 req_pkgs <- CFG$packages
 new <- req_pkgs[!(req_pkgs %in% installed.packages()[, "Package"])]
@@ -37,16 +44,9 @@ dir.create(file.path(out_dir, "tables"), showWarnings = FALSE, recursive = TRUE)
 dir.create(file.path(out_dir, "figures"), showWarnings = FALSE, recursive = TRUE)
 dir.create(file.path(out_dir, "artifacts"), showWarnings = FALSE, recursive = TRUE)
 
-# Set up parallel backend for glmnet cross-validation
-cl <- NULL
-try({
-  ncores <- max(1L, parallel::detectCores() - 1L)
-  cl <- parallel::makeCluster(ncores)
-  doParallel::registerDoParallel(cl)
-  message(sprintf("Parallel CV enabled with %d workers", ncores))
-}, silent = TRUE)
+## glmnet cross-validation runs sequentially (no cluster)
 
-# Clean old outputs (remove previous artifacts, tables, figures) but keep report_final.tex if present
+# Clean old outputs (remove previous artifacts, tables, figures) and stale reports
 try({
   old_tabs <- list.files(file.path(out_dir, "tables"), full.names = TRUE, recursive = TRUE)
   old_figs <- list.files(file.path(out_dir, "figures"), full.names = TRUE, recursive = TRUE)
@@ -54,12 +54,11 @@ try({
   if (length(old_tabs)) file.remove(old_tabs)
   if (length(old_figs)) file.remove(old_figs)
   if (length(old_art))  file.remove(old_art)
-  # Remove prior report files except report_final.tex
-  keep <- file.path(out_dir, "report_final.tex")
+  # Remove prior report-related files to ensure only report.(tex|pdf) remain after run
   for (f in list.files(out_dir, full.names = TRUE)) {
-    if (!identical(normalizePath(f, winslash = "/", mustWork = FALSE), normalizePath(keep, winslash = "/", mustWork = FALSE))) {
-      if (grepl("^report\\.(tex|pdf|log|aux|fls|fdb_latexmk)$", basename(f))) try(file.remove(f), silent = TRUE)
-    }
+    bn <- basename(f)
+    if (grepl("^(report_final|report_testing)\\.(tex|pdf|log|aux|fls|fdb_latexmk)$", bn)) try(file.remove(f), silent = TRUE)
+    if (grepl("^report\\.(log|aux|fls|fdb_latexmk)$", bn)) try(file.remove(f), silent = TRUE)
   }
 }, silent = TRUE)
 
@@ -70,20 +69,19 @@ if (!file.exists(file.path(out_dir, CFG$files$raw_assets_overview_tex))) {
   }
 }
 
-# Rebuild cleaned-data LaTeX artifacts to ensure report_final.tex inputs exist
-try(source(file.path("scripts", "make_clean_matrices_only.R")), silent = TRUE)
+# Rebuild cleaned-data LaTeX artifacts needed for the report
+try(safe_source(file.path("scripts", "make_clean_matrices_only.R")), silent = TRUE)
 
 # Source modular code
-source(file.path(utils_dir, "helpers.R"))
-source(file.path(utils_dir, "io.R"))
-source(file.path(utils_dir, "cleaning.R"))
-source(file.path(utils_dir, "data_nhanes.R"))
-source(file.path(utils_dir, "reporting.R"))
-source(file.path(core_dir,  "modeling.R"))
-source(file.path(core_dir,  "modeling_lasso.R"))
-source(file.path(core_dir,  "diagnostics.R"))
-## Monte Carlo module removed
-## NN removed per request; not sourcing modeling_nn.R
+safe_source(file.path(utils_dir, "helpers.R"))
+safe_source(file.path(utils_dir, "io.R"))
+safe_source(file.path(utils_dir, "cleaning.R"))
+safe_source(file.path(utils_dir, "data_nhanes.R"))
+safe_source(file.path(utils_dir, "reporting.R"))
+safe_source(file.path(core_dir,  "modeling.R"))
+safe_source(file.path(core_dir,  "modeling_lasso.R"))
+safe_source(file.path(core_dir,  "diagnostics.R"))
+## Omit neural network and Monte Carlo modules
 
 # 1) Load cleaned matrices (X, y) ---------------------------------------------
 
@@ -101,6 +99,11 @@ if (label_var != "risk_index") {
   sim_df$risk_index <- sim_df[[label_var]]
 }
 CFG$data$source_label <- paste0("Cleaned matrices (label = ", label_var, ") from clean-data/")
+# Ensure smoker is a factor and baseline is Never for both models
+if ("smoker" %in% names(sim_df)) {
+  if (!is.factor(sim_df$smoker)) sim_df$smoker <- factor(sim_df$smoker)
+  sim_df$smoker <- stats::relevel(sim_df$smoker, ref = "Never")
+}
 # Compute class weights (inverse-prevalence, normalized)
 prev <- mean(sim_df$risk_index == 1, na.rm = TRUE)
 w_vec <- ifelse(sim_df$risk_index == 1, ifelse(prev>0, 1/prev, 1), ifelse(prev<1, 1/(1-prev), 1))
@@ -131,9 +134,11 @@ if (!is.null(results$vif)) print(results$vif) else cat("(not available)\n")
 plots <- make_diagnostics_plots(results$model, model_label = "Logit")
 p3    <- make_predictions_plot(results$model, sim_df, model_label = "Logit", scale_to_five = TRUE)
 
-print(plots$p1)
-print(plots$p2)
-print(p3)
+if (interactive()) {
+  print(plots$p1)
+  print(plots$p2)
+  print(p3)
+}
 
 save_plots(plots$p1, plots$p2, p3, out_dir)
 
@@ -147,7 +152,7 @@ cat('\nSaved robust-SE regression tables to output/.\n')
 save_summary_stats_tex(sim_df, out_dir)
 save_vif_text(results$vif, out_dir)
 save_data_overview_tex(sim_df, out_dir, label = CFG$data$source_label)
-## Wave counts omitted per request
+## Wave counts omitted
 
 # Clean artifacts are produced by scripts/make_clean_matrices_only.R; do not re-clean here
 if (file.exists(file.path(CFG$dirs$out, CFG$files$clean_overview_tex))) {
@@ -174,7 +179,7 @@ ols_panel_path <- file.path(out_dir, CFG$files$ols_panel)
 save_panel_grid(list(plots$p1, plots$p2), ols_panel_path, nrow = 1, ncol = 2)
 
 # LASSO panel: residuals vs fitted (using lambda.min predictions), QQ, and CV error plot
-mm_lasso <- model.matrix(risk_index ~ smoker + age + age_sq + sex + log_income, data = sim_df)[, -1, drop = FALSE]
+mm_lasso <- model.matrix(risk_index ~ smoker + age + age_sq + sex + log_income + smoker:age, data = sim_df)[, -1, drop = FALSE]
 lasso_pred <- as.numeric(predict(lasso$cvfit, newx = mm_lasso, s = "lambda.min", type = "response"))
 lasso_resid <- as.numeric(sim_df$risk_index) - lasso_pred
 lasso_resid_plot <- make_resid_plot_from_pred(sim_df$risk_index, lasso_pred, model_label = "LASSO")
@@ -187,7 +192,7 @@ dir.create(file.path(out_dir, "figures"), showWarnings = FALSE, recursive = TRUE
 ggplot2::ggsave(filename = file.path(out_dir, CFG$files$lasso_residuals), plot = lasso_resid_plot, width = CFG$plots$width, height = CFG$plots$height, dpi = CFG$plots$dpi)
 ggplot2::ggsave(filename = file.path(out_dir, CFG$files$lasso_qq), plot = lasso_qq_plot, width = CFG$plots$width, height = CFG$plots$height, dpi = CFG$plots$dpi)
 
-## NN removed per request
+## Neural network module omitted
 
 # Classification metrics and plots -------------------------------------------
 yy <- as.numeric(sim_df$risk_index)
@@ -196,7 +201,7 @@ logit_prob <- as.numeric(fitted(results$model, type = "response"))
 logit_cls <- compute_classification_metrics(yy, logit_prob, threshold = 0.5)
 save_single_class_metrics_tex(logit_cls, file.path(out_dir, CFG$files$logit_metrics_in_tex))
 # LASSO preds (same formula basis as modeling_lasso.R)
-mm_lasso <- model.matrix(risk_index ~ smoker + age + age_sq + sex + log_income, data = sim_df)[, -1, drop = FALSE]
+mm_lasso <- model.matrix(risk_index ~ smoker + age + age_sq + sex + log_income + smoker:age, data = sim_df)[, -1, drop = FALSE]
 lasso_prob <- as.numeric(predict(lasso$cvfit, newx = mm_lasso, s = "lambda.min", type = "response"))
 lasso_cls <- compute_classification_metrics(yy, lasso_prob, threshold = 0.5)
 save_single_class_metrics_tex(lasso_cls, file.path(out_dir, CFG$files$lasso_cls_metrics_in_tex))
@@ -212,19 +217,19 @@ n_train <- floor(0.8 * n_all)
 tr_idx <- idx_all[1:n_train]
 te_idx <- idx_all[(n_train + 1):n_all]
 
-## Logit train/test
-w_tr <- w_vec[tr_idx]; logit_tr <- stats::glm(risk_index ~ smoker + age + age_sq + sex + log_income, data = sim_df[tr_idx, , drop = FALSE], family = stats::binomial(), weights = w_tr)
+## Logit train/test (match main model with smoker:age interaction)
+w_tr <- w_vec[tr_idx]; logit_tr <- stats::glm(risk_index ~ smoker + age + age_sq + sex + log_income + smoker:age, data = sim_df[tr_idx, , drop = FALSE], family = stats::binomial(), weights = w_tr)
 logit_pred_tr <- as.numeric(fitted(logit_tr, type = "response"))
 logit_pred_te <- as.numeric(predict(logit_tr, newdata = sim_df[te_idx, , drop = FALSE], type = "response"))
 in_logit_cls <- compute_classification_metrics(as.numeric(sim_df$risk_index[tr_idx]), logit_pred_tr, threshold = 0.5)
 out_logit_cls <- compute_classification_metrics(as.numeric(sim_df$risk_index[te_idx]), logit_pred_te, threshold = 0.5)
 
 ## LASSO train/test
-mm_tr <- model.matrix(risk_index ~ smoker + age + age_sq + sex + log_income, data = sim_df[tr_idx, , drop = FALSE])[, -1, drop = FALSE]
-mm_te <- model.matrix(risk_index ~ smoker + age + age_sq + sex + log_income, data = sim_df[te_idx, , drop = FALSE])[, -1, drop = FALSE]
+mm_tr <- model.matrix(risk_index ~ smoker + age + age_sq + sex + log_income + smoker:age, data = sim_df[tr_idx, , drop = FALSE])[, -1, drop = FALSE]
+mm_te <- model.matrix(risk_index ~ smoker + age + age_sq + sex + log_income + smoker:age, data = sim_df[te_idx, , drop = FALSE])[, -1, drop = FALSE]
 yy_tr <- as.numeric(sim_df$risk_index[tr_idx])
 yy_te <- as.numeric(sim_df$risk_index[te_idx])
-cv_tr <- glmnet::cv.glmnet(x = mm_tr, y = yy_tr, alpha = CFG$model$lasso$alpha, nfolds = CFG$model$lasso$nfolds, standardize = CFG$model$lasso$standardize, family = CFG$model$lasso$family, weights = w_tr, parallel = TRUE)
+cv_tr <- glmnet::cv.glmnet(x = mm_tr, y = yy_tr, alpha = CFG$model$lasso$alpha, nfolds = CFG$model$lasso$nfolds, standardize = CFG$model$lasso$standardize, family = CFG$model$lasso$family, weights = w_tr, parallel = FALSE)
 lasso_pred_tr <- as.numeric(predict(cv_tr, newx = mm_tr, s = "lambda.min", type = "response"))
 lasso_pred_te <- as.numeric(predict(cv_tr, newx = mm_te, s = "lambda.min", type = "response"))
 in_lasso_cls <- compute_classification_metrics(yy_tr, lasso_pred_tr, threshold = 0.5)
@@ -239,30 +244,27 @@ save_single_class_metrics_tex(out_lasso_cls, file.path(out_dir, CFG$files$lasso_
 
 # Render LaTeX report (and attempt compile if tinytex is installed)
 render_latex_report(out_dir)
-# Ensure raw assets overview exists before report_final compilation
-if (!file.exists(file.path(out_dir, CFG$files$raw_assets_overview_tex))) {
-  if (exists("save_raw_assets_overview_tex")) {
-    save_raw_assets_overview_tex(out_dir, CFG, CFG$dirs$res_nhanes, CFG$dirs$res_mort, CFG$data$nhanes_waves)
-  }
-}
-
-# Sanitize generated tables for inclusion in custom report_final.tex
-source(file.path(utils_dir, "io.R"))
+safe_source(file.path(utils_dir, "io.R"))
 sanitize_tables_dir(out_dir)
 # Force-recompile PDF so updated figures are included
 compile_report(out_dir, force = TRUE)
-# Also compile report_final.tex if present, to follow the final structure
-final_tex <- file.path(out_dir, "report_final.tex")
-if (file.exists(final_tex)) {
-  if (requireNamespace("tinytex", quietly = TRUE)) {
-    owd <- getwd(); on.exit(setwd(owd), add = TRUE)
-    setwd(out_dir)
-    try(system2("latexmk", c("-g", "-pdf", basename(final_tex))), silent = TRUE)
-    setwd(owd)
+
+# Final cleanup: ensure only report.(tex|pdf) and subfolders remain in output/
+try({
+  for (f in list.files(out_dir, full.names = TRUE)) {
+    bn <- basename(f)
+    if (bn %in% c("report.tex", "report.pdf", "tables", "figures", "artifacts")) next
+    if (file.info(f)$isdir) next
+    if (grepl("^(report_final|report_testing|mlp_|nn_|neural).*", bn)) try(file.remove(f), silent = TRUE)
   }
-}
+  # Also remove stray report_final/report_testing aux files if any reappeared
+  junk <- list.files(out_dir, pattern = "^(report_final|report_testing)\\.(tex|pdf|log|aux|fls|fdb_latexmk)$", full.names = TRUE)
+  if (length(junk)) try(file.remove(junk), silent = TRUE)
+  # Remove LaTeX aux files for the main report; leave only report.tex/pdf
+  aux <- list.files(out_dir, pattern = "^report\\.(log|aux|fls|fdb_latexmk)$", full.names = TRUE)
+  if (length(aux)) try(file.remove(aux), silent = TRUE)
+}, silent = TRUE)
 
-# Stop cluster if started (MC runs after report but is short; no need to keep cluster)
-try(if (!is.null(cl)) parallel::stopCluster(cl), silent = TRUE)
+## End of pipeline
 
-## Monte Carlo removed per request
+

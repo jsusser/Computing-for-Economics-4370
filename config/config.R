@@ -76,7 +76,6 @@
     # Individual diagnostics figures per model
     lasso_residuals = "figures/lasso_residuals_vs_fitted.png",
     lasso_qq = "figures/lasso_qq_plot.png",
-    # # NN outputs removed
     model_metrics_tex = "tables/model_comparison_metrics.tex",
     model_metrics_txt = "artifacts/model_comparison_metrics.txt",
     model_metrics_in_tex = "tables/model_metrics_in_sample.tex",
@@ -98,7 +97,6 @@
     ols_metrics_out_tex = "tables/ols_metrics_out_of_sample.tex",
     lasso_metrics_in_tex = "tables/lasso_metrics_in_sample.tex",
     lasso_metrics_out_tex = "tables/lasso_metrics_out_of_sample.tex",
-    # # NN outputs removed
     # Logistic (mortality) outputs
     logit_table_txt = "logit_mortality_table.txt",
     logit_table_tex = "logit_mortality_table.tex",
@@ -106,7 +104,6 @@
     logit_lasso_coefs_tex = "logit_lasso_coefficients.tex",
     logit_coef_compare_txt = "logit_coef_comparison.txt",
     logit_coef_compare_tex = "logit_coef_comparison.tex",
-    # Monte Carlo outputs removed
     data_overview_tex = "tables/data_overview.tex",
     missing_by_var_tex = "tables/missing_by_variable.tex",
     clean_overview_tex = "tables/clean_data_overview.tex",

@@ -60,14 +60,18 @@ render_latex_report <- function(out_dir = CFG$dirs$out, title = CFG$report$title
     # Wave counts omitted by design
     "\\section{Cleaned Data}",
     "We construct X and y from the raw join: pick a single label (dead preferred) and drop rows only if the label is missing. Features are imputed (numeric: median + missing flags; categorical: Unknown level); age and PIR are standardized; we add age\\_sq and log\\_income. Categorical factors (smoker, sex) are used directly.",
-    paste0("\\input{", cfg$files$clean_overview_tex, "}"),
-    "\\noindent \\textbf{Head of Feature Matrix (X)}",
-    "\\par",
-    paste0("\\input{", cfg$files$head_X_tex, "}"),
+    if (have(cfg$files$clean_overview_tex)) paste0("\\input{", cfg$files$clean_overview_tex, "}") else NULL,
+    if (have(cfg$files$head_X_tex)) c(
+      "\\noindent \\textbf{Head of Feature Matrix (X)}",
+      "\\par",
+      paste0("\\input{", cfg$files$head_X_tex, "}")
+    ) else NULL,
     "\\medskip",
-    "\\noindent \\textbf{Head of Label Vector (y)}",
-    "\\par",
-    paste0("\\input{", cfg$files$head_y_tex, "}"),
+    if (have(cfg$files$head_y_tex)) c(
+      "\\noindent \\textbf{Head of Label Vector (y)}",
+      "\\par",
+      paste0("\\input{", cfg$files$head_y_tex, "}")
+    ) else NULL,
     "\\medskip",
     if (have(cfg$files$head_cleaned_full_tex)) c(
       "\\noindent \\textbf{Head of Cleaned Full Frame}",
@@ -81,10 +85,12 @@ render_latex_report <- function(out_dir = CFG$dirs$out, title = CFG$report$title
       paste0("\\input{", cfg$files$head_meta_tex, "}"),
       "\\medskip"
     ) else NULL,
-    "\\noindent \\textbf{Imputation Counts by Variable}",
-    "\\par",
-    paste0("\\input{", cfg$files$imputation_counts_tex, "}"),
-    "\\medskip",
+    if (have(cfg$files$imputation_counts_tex)) c(
+      "\\noindent \\textbf{Imputation Counts by Variable}",
+      "\\par",
+      paste0("\\input{", cfg$files$imputation_counts_tex, "}"),
+      "\\medskip"
+    ) else NULL,
     # Wave counts omitted by design
     "\\section{Feature/Label Dictionaries and Metrics}",
     "We document each feature and the label, then summarize numeric distributions and categorical compositions to contextualize model inputs.",
@@ -130,15 +136,18 @@ render_latex_report <- function(out_dir = CFG$dirs$out, title = CFG$report$title
     ) else NULL,
     "\\section{Transformations}",
     "This section explains the transformation logic and motivations: label-only dropping preserves sample size; standardized numerics help comparability; categorical factors (smoker, sex) are used directly; smoker categories follow CDC coding of SMQ020/040.",
-    paste0("\\input{", cfg$files$processing_notes_tex, "}"),
-    "\\noindent \\textbf{Smoker Categories (Counts)}",
-    "\\par",
-    paste0("\\input{", cfg$files$smoker_counts_tex, "}"),
-    "\\medskip",
+    if (have(cfg$files$processing_notes_tex)) paste0("\\input{", cfg$files$processing_notes_tex, "}") else NULL,
+    if (have(cfg$files$smoker_counts_tex)) c(
+      "\\noindent \\textbf{Smoker Categories (Counts)}",
+      "\\par",
+      paste0("\\input{", cfg$files$smoker_counts_tex, "}"),
+      "\\medskip"
+    ) else NULL,
     "\\section{Models}",
     "We estimate two logistic models on the cleaned matrices: (1) a baseline weighted logit with HC1-robust standard errors, and (2) a weighted regularized logit selected by cross-validation.",
+    "\\par\\noindent Reference (omitted) smoking category: Never.",
     "\\subsection*{Model 1: Logit (Weighted, HC1 robust)}",
-    "\\noindent Math: $\\displaystyle y = \\beta_0 + \\beta_1 \\cdot 1\\{smoker=Former\\} + \\beta_2 \\cdot 1\\{smoker=Current\\} + \\beta_3 age + \\beta_4 1\\{sex=male\\} + \\beta_5 income + \\varepsilon$.",
+    "\\noindent Math: $\\displaystyle y = \\beta_0 + \\beta_1 \\cdot 1\\{smoker=Former\\} + \\beta_2 \\cdot 1\\{smoker=Current\\} + \\beta_3 age + \\beta_4 1\\{sex=male\\} + \\beta_5 income + \\varepsilon$. \\ (Reference: Never)",
     "\\par\\noindent Coefficients (robust SEs):",
     paste0("\\input{", cfg$files$table_tex, "}"),
     "\\medskip",
